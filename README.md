@@ -111,7 +111,7 @@ Changing this value later invalidates existing signed cookies and sessions.
 Edit `.env.prod` with the application's production values:
 
 ```bash
-DATABASE_URL="ecto://my_app:STRONG_DATABASE_PASSWORD@127.0.0.1/my_app_prod"
+DATABASE_URL="ecto://STRONG_DATABASE_USERNAME:STRONG_DATABASE_PASSWORD@127.0.0.1/DATABASE_NAME"
 SECRET_KEY_BASE="PASTE_THE_GENERATED_SECRET_HERE"
 PHX_HOST="example.com"
 PORT="4000"
@@ -128,17 +128,16 @@ S3_BUCKET="my-production-bucket"
 AWS_REGION="eu-west-1"
 ```
 
-## 4. Prepare the database
+## 4. Verify the production database
 
-Create a production database and dedicated user. A typical PostgreSQL setup is:
+This deployment process assumes the production database and its user already
+exist and that `DATABASE_URL` contains working credentials. You do not need to
+create the database as part of this deployment procedure.
 
-```sql
-CREATE USER my_app WITH PASSWORD 'STRONG_DATABASE_PASSWORD';
-CREATE DATABASE my_app_prod OWNER my_app;
-```
-
-Ensure `DATABASE_URL` uses those credentials. The deployment script runs
-migrations but intentionally does not create database users or grant access.
+The deployment script runs the release migration command (equivalent to
+`mix ecto.migrate`) against the existing database. Migrations create and update
+the application's tables, but they do not create the database, create database
+users, or grant permissions.
 
 ## 5. Perform the first deployment
 
