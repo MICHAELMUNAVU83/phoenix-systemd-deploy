@@ -1,5 +1,5 @@
 # Copy this file to .github/workflows/ci-deploy.yml in the Phoenix application.
-# Replace YOUR_ORG/phoenix-systemd-deploy with the deployment-kit repository.
+# The application repository must also contain the deployment kit in .deploy/.
 
 name: CI and deploy
 
@@ -30,10 +30,6 @@ jobs:
       MIX_ENV: test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: YOUR_ORG/phoenix-systemd-deploy
-          path: .deploy-tools
       - uses: erlef/setup-beam@v1
         with:
           version-file: .tool-versions
@@ -46,7 +42,7 @@ jobs:
           key: mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
           restore-keys: mix-${{ runner.os }}-
       - name: Run the same CI checks used locally
-        run: .deploy-tools/ci.sh "$GITHUB_WORKSPACE"
+        run: ./.deploy/ci.sh
 
   deploy:
     needs: test
@@ -61,7 +57,6 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
       VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
-      VPS_DEPLOY_TOOL_PATH: ${{ secrets.VPS_DEPLOY_TOOL_PATH }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
       VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
     steps:
@@ -75,13 +70,12 @@ jobs:
       - name: Pull and deploy on the VPS
         run: |
           ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            'bash -se' -- "$VPS_APP_PATH" "$VPS_DEPLOY_TOOL_PATH" "$GITHUB_SHA" <<'DEPLOY'
+            'bash -se' -- "$VPS_APP_PATH" "$GITHUB_SHA" <<'DEPLOY'
           set -euo pipefail
           app_path="$1"
-          deploy_tool_path="$2"
-          commit="$3"
+          commit="$2"
           git -C "$app_path" fetch origin "$commit"
           git -C "$app_path" merge --ff-only "$commit"
-          git -C "$deploy_tool_path" pull --ff-only
-          APP_DIR="$app_path" "$deploy_tool_path/deploy.sh" deploy
+          cd "$app_path"
+          ./.deploy/deploy.sh deploy
           DEPLOY

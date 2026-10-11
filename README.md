@@ -1,30 +1,79 @@
 # Phoenix systemd deploy
 
-A reusable deployment kit for Phoenix applications on Linux. It builds a Mix
-release, runs database migrations, installs a user-level systemd service,
-restarts the application, and checks that it responds over HTTP.
+A small, repo-scoped deployment kit for Phoenix applications on Linux. Copy it
+into each Phoenix repository and commit it with the application. Each repository
+then owns its deployment scripts, systemd template, and CI workflow, so changes
+can be reviewed and released together with the code they affect.
 
-The same `ci.sh` script is used locally and by the included GitHub Actions
-workflow, so you can run the exact CI checks before pushing.
+The kit builds a Mix release, runs database migrations, installs a user-level
+systemd service, restarts the application, and checks that it responds over
+HTTP. The same CI script is used locally and in GitHub Actions.
 
-## What a deployment does
+[⬇ **Download the repo-scoped folder (.zip)**](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/raw/main/download/phoenix-systemd-deploy.zip)
 
-Running `deploy.sh deploy`:
+The download includes `rename.md`, which contains a ready-to-use prompt for an
+AI coding assistant to customize the deployment for the target repository.
 
-1. validates the Phoenix project and production environment;
-2. creates or updates `~/.config/systemd/user/APP_NAME.service`;
-3. reloads the user systemd manager;
-4. fetches production dependencies and builds the release;
-5. runs database migrations;
-6. enables and restarts the service;
-7. performs an HTTP health check;
-8. prints recent journal logs if the health check fails.
+## Repository layout
 
-## Requirements
+After installation, each Phoenix repository should contain:
 
-The server needs Linux with systemd, Erlang, Elixir, Git, curl, the application's
-database, and any asset-build tools used by the application. Deploy as a normal
-Linux user rather than root.
+```text
+my_app/
+├── rename.md
+├── .deploy/
+│   ├── .env.prod.example
+│   ├── ci.sh
+│   ├── deploy.sh
+│   └── phoenix.service.tpl
+├── .github/workflows/ci-deploy.yml
+├── lib/
+├── mix.exs
+└── ...
+```
+
+`.deploy/` and the workflow are committed. The real `.env.prod` contains
+secrets, lives at the application root on the server, and is never committed.
+
+## 1. Add the kit to a Phoenix repository
+
+Download and extract the folder above into the Phoenix repository, or copy the
+files from this repository's `repo-template/` directory:
+
+```bash
+APP_REPO=/path/to/my_app
+
+cp -R repo-template/. "$APP_REPO/"
+chmod +x "$APP_REPO/.deploy/deploy.sh" "$APP_REPO/.deploy/ci.sh"
+```
+
+Open `rename.md` in the target repository and give its prompt to your AI coding
+assistant. Review the resulting changes before committing them.
+
+Commit the copied files in the application repository:
+
+```bash
+cd "$APP_REPO"
+git add .deploy .github/workflows/ci-deploy.yml rename.md
+git commit -m "Add repo-scoped systemd deployment"
+```
+
+Repeat this copy step for each Phoenix application. Once copied, each
+application's files are independent and can be customized for that application.
+
+## 2. Prepare the server checkout
+
+The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
+application's database, and any asset-build tools used by the application.
+Deploy as a normal Linux user rather than root.
+
+Clone only the application repository; a separate deployment-kit checkout is
+not required:
+
+```bash
+git clone YOUR_APPLICATION_REPOSITORY_URL /home/deploy/my_app
+cd /home/deploy/my_app
+```
 
 The Phoenix application must provide release commands at:
 
@@ -36,55 +85,29 @@ _build/prod/rel/APP_NAME/bin/migrate
 If they are missing, run `mix phx.gen.release` in the application repository
 and commit its output.
 
-## 1. Install the deployment kit and application
+## 3. Create the production environment
 
-The kit can live outside the Phoenix application and deploy multiple apps:
-
-```bash
-git clone YOUR_DEPLOY_KIT_REPOSITORY_URL /home/deploy/phoenix-systemd-deploy
-chmod +x /home/deploy/phoenix-systemd-deploy/deploy.sh
-chmod +x /home/deploy/phoenix-systemd-deploy/ci.sh
-
-git clone YOUR_APPLICATION_REPOSITORY_URL /home/deploy/my_app
-```
-
-In this guide, `deploy` is the Linux user, `/home/deploy/my_app` is the Phoenix
-application, and `/home/deploy/phoenix-systemd-deploy` is this kit. Both
-directories should belong to the deployment user.
-
-## 2. Create the production environment
-
-Copy the template into the Phoenix application and protect it:
+On the server, copy the example to the application root and protect it:
 
 ```bash
-cp /home/deploy/phoenix-systemd-deploy/.env.prod.example \
-  /home/deploy/my_app/.env.prod
-chmod 600 /home/deploy/my_app/.env.prod
+cd /home/deploy/my_app
+cp .deploy/.env.prod.example .env.prod
+chmod 600 .env.prod
 ```
 
 Add `.env.prod` to the application's `.gitignore`. It contains secrets and must
 never be committed.
 
-### Generate `SECRET_KEY_BASE`
-
-Generate a secure secret from the application directory:
+Generate `SECRET_KEY_BASE` once and keep it stable between deployments:
 
 ```bash
-cd /home/deploy/my_app
 mix phx.gen.secret
 ```
 
-Copy the complete output into `.env.prod`. Generate this once and keep it stable
-between deployments. Changing it invalidates existing signed cookies and
-sessions.
+If project dependencies are not installed yet, use `openssl rand -base64 64`.
+Changing this value later invalidates existing signed cookies and sessions.
 
-If project dependencies are not installed yet, you can instead use:
-
-```bash
-openssl rand -base64 64
-```
-
-### Edit `.env.prod`
+Edit `.env.prod` with the application's production values:
 
 ```bash
 DATABASE_URL="ecto://my_app:STRONG_DATABASE_PASSWORD@127.0.0.1/my_app_prod"
@@ -96,9 +119,7 @@ FORCE_SSL="true"
 ```
 
 Use `FORCE_SSL="false"` only while testing direct HTTP without an HTTPS reverse
-proxy. For production behind Nginx or Caddy, use `FORCE_SSL="true"`.
-
-Add every runtime dependency to this file too:
+proxy. Add every other runtime dependency to this file as well, for example:
 
 ```bash
 FACE_SEARCH_URL="http://127.0.0.1:5000"
@@ -106,16 +127,7 @@ S3_BUCKET="my-production-bucket"
 AWS_REGION="eu-west-1"
 ```
 
-Test local supporting services before deployment:
-
-```bash
-curl --fail http://127.0.0.1:5000/health
-```
-
-An incorrect URL or stopped dependency commonly appears as
-`Req.TransportError` with `:econnrefused`.
-
-## 3. Prepare the database
+## 4. Prepare the database
 
 Create a production database and dedicated user. A typical PostgreSQL setup is:
 
@@ -127,24 +139,21 @@ CREATE DATABASE my_app_prod OWNER my_app;
 Ensure `DATABASE_URL` uses those credentials. The deployment script runs
 migrations but intentionally does not create database users or grant access.
 
-## 4. Perform the first deployment
+## 5. Perform the first deployment
 
-Run this as the deployment user:
+Run the repo-local script from the application root as the deployment user:
 
 ```bash
-APP_DIR=/home/deploy/my_app \
-  /home/deploy/phoenix-systemd-deploy/deploy.sh deploy
+cd /home/deploy/my_app
+./.deploy/deploy.sh deploy
 ```
 
 The app name is detected from `mix.exs`. For an app named `my_app`, the script
-creates `~/.config/systemd/user/my_app.service`, reloads systemd, builds and
-migrates the release, then enables and starts the service. You do not need to
-copy or link the service file manually.
+creates `~/.config/systemd/user/my_app.service`, builds and migrates the release,
+then enables and starts the service.
 
-## 5. Start the service automatically after reboot
-
-Enable lingering once so the user service runs without an active SSH session
-and starts after a reboot:
+Enable lingering once so the user service starts after a reboot without an
+active SSH session:
 
 ```bash
 sudo loginctl enable-linger deploy
@@ -154,144 +163,95 @@ loginctl show-user deploy --property=Linger
 The expected output is `Linger=yes`. This is normally the only setup command
 that requires root privileges.
 
-## 6. Start, stop, and inspect the service
+## 6. Operate the service
 
 Use systemd while logged in as the deployment user:
 
 ```bash
 systemctl --user status my_app.service
-systemctl --user start my_app.service
-systemctl --user stop my_app.service
 systemctl --user restart my_app.service
-systemctl --user enable my_app.service
-systemctl --user disable my_app.service
-```
-
-Follow logs or show the most recent 100 lines:
-
-```bash
 journalctl --user -u my_app.service -f
-journalctl --user -u my_app.service -n 100 --no-pager
 ```
 
-The deployment kit also provides shortcuts:
+Or use the repo-local shortcuts from the application root:
 
 ```bash
-APP_DIR=/home/deploy/my_app /home/deploy/phoenix-systemd-deploy/deploy.sh status
-APP_DIR=/home/deploy/my_app /home/deploy/phoenix-systemd-deploy/deploy.sh logs
-APP_DIR=/home/deploy/my_app /home/deploy/phoenix-systemd-deploy/deploy.sh restart
+./.deploy/deploy.sh status
+./.deploy/deploy.sh logs
+./.deploy/deploy.sh restart
 ```
 
 ## 7. Deploy updates
 
 ```bash
-git -C /home/deploy/my_app pull --ff-only origin master
-
-APP_DIR=/home/deploy/my_app \
-  /home/deploy/phoenix-systemd-deploy/deploy.sh deploy
+cd /home/deploy/my_app
+git pull --ff-only origin master
+./.deploy/deploy.sh deploy
 ```
 
 The running service restarts only after the release builds and migrations
-succeed.
+succeed. Because `.deploy/` belongs to the application repository, deployment
+script changes arrive with the same pull as application changes.
 
 ## Configuration overrides
 
-These shell variables customize a deployment:
-
-| Variable | Default |
-| --- | --- |
-| `APP_DIR` | Current directory |
-| `APP_NAME` | Detected from `mix.exs` |
-| `SERVICE_NAME` | `APP_NAME.service` |
-| `ENV_FILE` | `APP_DIR/.env.prod` |
-| `HEALTH_PATH` | `/` |
-| `PORT` | `4000`, unless set in `.env.prod` |
+| Variable           | Default                                          |
+| ------------------ | ------------------------------------------------ |
+| `APP_DIR`          | Current directory                                |
+| `APP_NAME`         | Detected from `mix.exs`                          |
+| `SERVICE_NAME`     | `APP_NAME.service`                               |
+| `ENV_FILE`         | `APP_DIR/.env.prod`                              |
+| `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl` beside `deploy.sh` |
+| `HEALTH_PATH`      | `/`                                              |
+| `PORT`             | `4000`, unless set in `.env.prod`                |
 
 For example:
 
 ```bash
-APP_DIR=/home/deploy/my_app \
-HEALTH_PATH=/health \
-SERVICE_NAME=my-app.service \
-  /home/deploy/phoenix-systemd-deploy/deploy.sh deploy
+HEALTH_PATH=/health SERVICE_NAME=my-app.service ./.deploy/deploy.sh deploy
 ```
 
-## Run CI locally before pushing
+## Run CI locally
 
-Run the exact checks used by GitHub Actions:
+From the application root, run the exact checks used by GitHub Actions:
 
 ```bash
-/home/deploy/phoenix-systemd-deploy/ci.sh /home/deploy/my_app
+./.deploy/ci.sh
 ```
 
 The script runs `mix deps.get`, formatting checks, compilation with warnings as
-errors, and the test suite. Fix all failures before pushing.
+errors, and the test suite.
 
-## Configure GitHub Actions
+## Configure GitHub Actions deployment
 
-Copy the workflow template into the Phoenix application:
-
-```bash
-mkdir -p /home/deploy/my_app/.github/workflows
-cp /home/deploy/phoenix-systemd-deploy/github-workflows/ci-deploy.yml \
-  /home/deploy/my_app/.github/workflows/ci-deploy.yml
-```
-
-Replace `YOUR_ORG/phoenix-systemd-deploy` inside the copied workflow with the
-GitHub repository containing this kit, then commit the workflow. CI runs for
-pushes and pull requests. Deployment runs only after CI succeeds on a push to
-`master`.
+The copied workflow runs CI for pushes and pull requests. Deployment runs only
+after CI succeeds on a push to `master`.
 
 Add these secrets under **Application repository → Settings → Secrets and
 variables → Actions**:
 
-| Secret | Description |
-| --- | --- |
-| `VPS_HOST` | Server hostname or IP |
-| `VPS_USER` | Deployment user, such as `deploy` |
-| `VPS_PORT` | SSH port; optional, defaults to `22` |
-| `VPS_APP_PATH` | `/home/deploy/my_app` |
-| `VPS_DEPLOY_TOOL_PATH` | `/home/deploy/phoenix-systemd-deploy` |
-| `VPS_SSH_PRIVATE_KEY` | Private SSH deployment key |
-| `VPS_KNOWN_HOSTS` | Verified SSH host-key lines |
+| Secret                | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `VPS_HOST`            | Server hostname or IP                               |
+| `VPS_USER`            | Deployment user, such as `deploy`                   |
+| `VPS_PORT`            | SSH port; optional, defaults to `22`                |
+| `VPS_APP_PATH`        | Application checkout, such as `/home/deploy/my_app` |
+| `VPS_SSH_PRIVATE_KEY` | Private SSH deployment key                          |
+| `VPS_KNOWN_HOSTS`     | Verified SSH host-key lines                         |
 
-A private deployment-kit repository needs a token or deploy key for the second
-checkout in the workflow. A public kit repository needs no extra credential.
+No deployment-kit repository token, second Actions checkout, or separate
+`VPS_DEPLOY_TOOL_PATH` is needed: CI and deployment both use the files committed
+inside the application repository.
 
-## Troubleshooting
+## What a deployment does
 
-### Service does not start
+Running `./.deploy/deploy.sh deploy`:
 
-```bash
-systemctl --user status my_app.service
-journalctl --user -u my_app.service -n 100 --no-pager
-ls -l /home/deploy/my_app/_build/prod/rel/my_app/bin/server
-```
-
-### `Failed to connect to bus`
-
-Run systemd commands as the deployment user. Log in directly over SSH and
-confirm that lingering is enabled.
-
-### Health check fails
-
-```bash
-grep '^PORT=' /home/deploy/my_app/.env.prod
-curl --verbose http://127.0.0.1:4000/
-```
-
-Set `HEALTH_PATH=/health` when deploying if the application uses a dedicated
-health endpoint.
-
-### External service returns `:econnrefused`
-
-Verify its URL in `.env.prod`, confirm its process is running, and test its
-listening port directly:
-
-```bash
-systemctl --user status FACE_SERVICE_NAME.service
-curl --verbose http://127.0.0.1:5000/health
-```
-
-Restarting Phoenix cannot repair a separate service that is stopped or bound to
-the wrong interface or port.
+1. validates the Phoenix project and production environment;
+2. creates or updates `~/.config/systemd/user/APP_NAME.service`;
+3. reloads the user systemd manager;
+4. fetches production dependencies and builds the release;
+5. runs database migrations;
+6. enables and restarts the service;
+7. performs an HTTP health check;
+8. prints recent journal logs if the health check fails.
