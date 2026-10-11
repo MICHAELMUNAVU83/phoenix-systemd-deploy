@@ -71,8 +71,9 @@ Clone only the application repository; a separate deployment-kit checkout is
 not required:
 
 ```bash
-git clone YOUR_APPLICATION_REPOSITORY_URL /home/deploy/my_app
-cd /home/deploy/my_app
+cd ~
+git clone YOUR_APPLICATION_REPOSITORY_URL
+cd YOUR_APPLICATION_REPOSITORY_NAME
 ```
 
 The Phoenix application must provide release commands at:
@@ -90,7 +91,7 @@ and commit its output.
 On the server, copy the example to the application root and protect it:
 
 ```bash
-cd /home/deploy/my_app
+cd ~/YOUR_APPLICATION_REPOSITORY_NAME
 cp .deploy/.env.prod.example .env.prod
 chmod 600 .env.prod
 ```
@@ -144,7 +145,7 @@ migrations but intentionally does not create database users or grant access.
 Run the repo-local script from the application root as the deployment user:
 
 ```bash
-cd /home/deploy/my_app
+cd ~/YOUR_APPLICATION_REPOSITORY_NAME
 ./.deploy/deploy.sh deploy
 ```
 
@@ -184,7 +185,7 @@ Or use the repo-local shortcuts from the application root:
 ## 7. Deploy updates
 
 ```bash
-cd /home/deploy/my_app
+cd ~/YOUR_APPLICATION_REPOSITORY_NAME
 git pull --ff-only origin master
 ./.deploy/deploy.sh deploy
 ```
