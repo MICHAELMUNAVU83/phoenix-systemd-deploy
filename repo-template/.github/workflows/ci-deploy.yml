@@ -77,5 +77,5 @@ jobs:
           git -C "$app_path" fetch origin "$commit"
           git -C "$app_path" merge --ff-only "$commit"
           cd "$app_path"
-          ./.deploy/deploy.sh deploy
+          ./deploy.sh deploy
           DEPLOY

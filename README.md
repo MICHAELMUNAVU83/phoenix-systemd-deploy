@@ -21,10 +21,10 @@ After installation, each Phoenix repository should contain:
 ```text
 my_app/
 ├── rename.md
+├── deploy.sh
 ├── .deploy/
 │   ├── .env.prod.example
 │   ├── ci.sh
-│   ├── deploy.sh
 │   └── phoenix.service.tpl
 ├── .github/workflows/ci-deploy.yml
 ├── lib/
@@ -44,7 +44,7 @@ files from this repository's `repo-template/` directory:
 APP_REPO=/path/to/my_app
 
 cp -R repo-template/. "$APP_REPO/"
-chmod +x "$APP_REPO/.deploy/deploy.sh" "$APP_REPO/.deploy/ci.sh"
+chmod +x "$APP_REPO/deploy.sh" "$APP_REPO/.deploy/ci.sh"
 ```
 
 Open `rename.md` in the target repository and give its prompt to your AI coding
@@ -54,7 +54,7 @@ Commit the copied files in the application repository:
 
 ```bash
 cd "$APP_REPO"
-git add .deploy .github/workflows/ci-deploy.yml rename.md
+git add deploy.sh .deploy .github/workflows/ci-deploy.yml rename.md
 git commit -m "Add repo-scoped systemd deployment"
 ```
 
@@ -145,7 +145,7 @@ Run the repo-local script from the application root as the deployment user:
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
-./.deploy/deploy.sh deploy
+./deploy.sh deploy
 ```
 
 The app name is detected from `mix.exs`. For an app named `my_app`, the script
@@ -173,20 +173,24 @@ systemctl --user restart my_app.service
 journalctl --user -u my_app.service -f
 ```
 
-Or use the repo-local shortcuts from the application root:
+Or use the simpler repo-local commands from the application root:
 
 ```bash
-./.deploy/deploy.sh status
-./.deploy/deploy.sh logs
-./.deploy/deploy.sh restart
+./deploy.sh up
+./deploy.sh deploy
+./deploy.sh status
 ```
+
+`up` starts or restarts the existing release, `deploy` builds the release, runs
+migrations, and restarts it, and `status` displays its systemd status. Use
+`journalctl --user -u my_app.service -f` when you need live logs.
 
 ## 7. Deploy updates
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
 git pull --ff-only origin master
-./.deploy/deploy.sh deploy
+./deploy.sh deploy
 ```
 
 The running service restarts only after the release builds and migrations
@@ -201,14 +205,14 @@ script changes arrive with the same pull as application changes.
 | `APP_NAME`         | Detected from `mix.exs`                          |
 | `SERVICE_NAME`     | `APP_NAME.service`                               |
 | `ENV_FILE`         | `APP_DIR/.env.prod`                              |
-| `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl` beside `deploy.sh` |
+| `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl`                    |
 | `HEALTH_PATH`      | `/`                                              |
 | `PORT`             | `4000`, unless set in `.env.prod`                |
 
 For example:
 
 ```bash
-HEALTH_PATH=/health SERVICE_NAME=my-app.service ./.deploy/deploy.sh deploy
+HEALTH_PATH=/health SERVICE_NAME=my-app.service ./deploy.sh deploy
 ```
 
 ## Run CI locally
@@ -245,7 +249,7 @@ inside the application repository.
 
 ## What a deployment does
 
-Running `./.deploy/deploy.sh deploy`:
+Running `./deploy.sh deploy`:
 
 1. validates the Phoenix project and production environment;
 2. creates or updates `~/.config/systemd/user/APP_NAME.service`;

@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${APP_DIR:-$(pwd)}"
 ENV_FILE="${ENV_FILE:-${APP_DIR}/.env.prod}"
-SERVICE_TEMPLATE="${SERVICE_TEMPLATE:-${SCRIPT_DIR}/phoenix.service.tpl}"
+SERVICE_TEMPLATE="${SERVICE_TEMPLATE:-${SCRIPT_DIR}/.deploy/phoenix.service.tpl}"
 HEALTH_PATH="${HEALTH_PATH:-/}"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -119,7 +119,7 @@ deploy() {
 
 usage() {
   cat <<'EOF'
-Usage: ./deploy.sh [deploy|install|status|logs|restart]
+Usage: ./deploy.sh [up|deploy|status]
 
 The default command is deploy. Set APP_DIR when the Phoenix application is not
 the current directory, for example:
@@ -137,14 +137,12 @@ load_config
 
 case "${1:-deploy}" in
   deploy) deploy ;;
-  install) install_service ;;
-  status) systemctl --user status "$SERVICE_NAME" ;;
-  logs) exec journalctl --user -u "$SERVICE_NAME" -f ;;
-  restart)
+  up)
     require_production_env
     install_service
     restart_service
     health_check
     ;;
+  status) systemctl --user status "$SERVICE_NAME" ;;
   *) usage; exit 1 ;;
 esac

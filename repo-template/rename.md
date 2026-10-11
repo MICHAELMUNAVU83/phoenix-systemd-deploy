@@ -18,7 +18,7 @@ prompt:
 ## Files the AI should review
 
 - `.deploy/.env.prod.example`
-- `.deploy/deploy.sh`
+- `deploy.sh`
 - `.deploy/phoenix.service.tpl`
 - `.github/workflows/ci-deploy.yml`
 - `.gitignore`
@@ -35,7 +35,7 @@ The AI should leave the repository with:
 - `.env.prod` listed in `.gitignore`;
 - no real secret values in tracked files;
 - commands and paths matching the target repository;
-- executable `.deploy/deploy.sh` and `.deploy/ci.sh` files.
+- executable `deploy.sh` and `.deploy/ci.sh` files.
 
 Delete `rename.md` after the repository has been customized, or keep it as a
 checklist for future deployment changes.
