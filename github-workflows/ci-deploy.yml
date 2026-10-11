@@ -1,0 +1,87 @@
+# Copy this file to .github/workflows/ci-deploy.yml in the Phoenix application.
+# Replace YOUR_ORG/phoenix-systemd-deploy with the deployment-kit repository.
+
+name: CI and deploy
+
+permissions:
+  contents: read
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: YOUR_ORG/phoenix-systemd-deploy
+          path: .deploy-tools
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-
+      - name: Run the same CI checks used locally
+        run: .deploy-tools/ci.sh "$GITHUB_WORKSPACE"
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
+      VPS_DEPLOY_TOOL_PATH: ${{ secrets.VPS_DEPLOY_TOOL_PATH }}
+      VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+    steps:
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Pull and deploy on the VPS
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            'bash -se' -- "$VPS_APP_PATH" "$VPS_DEPLOY_TOOL_PATH" "$GITHUB_SHA" <<'DEPLOY'
+          set -euo pipefail
+          app_path="$1"
+          deploy_tool_path="$2"
+          commit="$3"
+          git -C "$app_path" fetch origin "$commit"
+          git -C "$app_path" merge --ff-only "$commit"
+          git -C "$deploy_tool_path" pull --ff-only
+          APP_DIR="$app_path" "$deploy_tool_path/deploy.sh" deploy
+          DEPLOY
