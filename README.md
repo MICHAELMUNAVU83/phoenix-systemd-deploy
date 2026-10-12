@@ -750,43 +750,55 @@ the installer.
 Do this once for each GitHub repository. You do not need to repeat it for
 future deployments.
 
-On your computer, preferably outside the application directory, create a
-deployment key:
+On your own computer—not on the VPS—create the deployment key pair in your
+home directory:
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions YOUR_APP_NAME" -f ./github-actions-YOUR_APP_NAME
+ssh-keygen -t ed25519 -C "github-actions YOUR_APP_NAME" -f ~/github-actions-YOUR_APP_NAME
 ```
 
 Replace `YOUR_APP_NAME` with the repository or application name. For example,
 an application named `my-shop` would use `github-actions-my-shop`. Press Enter
-when asked for a passphrase so the key has no passphrase.
+when asked for a passphrase so the key has no passphrase. This creates two
+files locally on your computer:
 
-Display the public key and copy its entire single line:
+- `~/github-actions-YOUR_APP_NAME` is the private key.
+- `~/github-actions-YOUR_APP_NAME.pub` is the public key.
+
+Do not copy either file to the VPS. You will copy and paste only the public
+key's text in the next steps.
+
+Still on your computer, display the public key and copy its entire single line:
 
 ```bash
-cat ./github-actions-YOUR_APP_NAME.pub
+cat ~/github-actions-YOUR_APP_NAME.pub
 ```
 
-Log in to the VPS as the deployment user:
+Choose the VPS account that GitHub Actions will use. Replace `YOUR_VPS_USER`
+with that account name—for example, `deploy` for a dedicated deployment user
+or `root` if the server is configured for root deployments. Log in as that
+user:
 
 ```bash
-ssh -p 22 deploy@YOUR_VPS_HOST
+ssh -p 22 YOUR_VPS_USER@YOUR_VPS_HOST
 ```
 
-Once logged in, prepare the deployment user's SSH directory:
+Once logged in, prepare that user's SSH directory:
 
 ```bash
 install -d -m 700 ~/.ssh
 ```
 
-On the VPS, run this command, paste the copied public-key line, and then press
-Ctrl-D:
+On the VPS, open the authorized-keys file:
 
 ```bash
-cat >> ~/.ssh/authorized_keys
+nano ~/.ssh/authorized_keys
 ```
 
-Set the correct permission:
+Paste the copied public-key line on a new line. Save with Ctrl-O, press Enter,
+and then exit with Ctrl-X.
+
+Set the correct file permission:
 
 ```bash
 chmod 600 ~/.ssh/authorized_keys
@@ -801,13 +813,25 @@ exit
 Then test the deployment key from your computer:
 
 ```bash
-ssh -i ./github-actions-YOUR_APP_NAME -p 22 deploy@YOUR_VPS_HOST
+ssh -i ~/github-actions-YOUR_APP_NAME -p 22 YOUR_VPS_USER@YOUR_VPS_HOST
 ```
 
+The test should log in without asking for the VPS user's password. Use the same
+account name later for the GitHub Actions `VPS_USER` secret. The public key is
+authorized only for the account whose `~/.ssh/authorized_keys` file you edited.
+
+Back on your computer, display the private key locally:
+
+```bash
+cat ~/github-actions-YOUR_APP_NAME
+```
+
+Keep this output secret and never paste it on the VPS. Copy everything,
+including the `BEGIN OPENSSH PRIVATE KEY` and `END OPENSSH PRIVATE KEY` lines.
 Then open the GitHub repository and go to **Settings → Secrets and variables →
 Actions → New repository secret**. Create a secret named
-`VPS_SSH_PRIVATE_KEY` and paste the complete contents of the
-`github-actions-YOUR_APP_NAME` file, including its `BEGIN` and `END` lines.
+`VPS_SSH_PRIVATE_KEY`, paste the copied private-key text into the secret value,
+and save it.
 
 Once deployment works, securely delete the local
 `github-actions-YOUR_APP_NAME` private-key file. You may keep
@@ -820,12 +844,17 @@ others.
 ### Record and verify the VPS host key
 
 GitHub Actions uses `VPS_KNOWN_HOSTS` to verify that it is connecting to the
-intended server. On a trusted computer, collect the server's public host keys
-(replace the port if SSH does not use port 22):
+intended server. This is a one-time setup for each repository, not something
+you repeat for every deployment. Repositories connecting to the same VPS and
+SSH port may use the same verified `VPS_KNOWN_HOSTS` value.
+
+Repeat this setup if the VPS is rebuilt, its SSH host keys change, or its
+hostname, IP address, or SSH port changes. On your computer, collect the
+server's public host keys (replace the port if SSH does not use port 22):
 
 ```bash
-ssh-keyscan -p 22 YOUR_VPS_HOST > vps_known_hosts
-ssh-keygen -lf vps_known_hosts
+ssh-keyscan -p 22 YOUR_VPS_HOST > ~/YOUR_APP_NAME-vps-known-hosts
+ssh-keygen -lf ~/YOUR_APP_NAME-vps-known-hosts
 ```
 
 Before trusting the output, compare the displayed fingerprints with the host
@@ -837,10 +866,16 @@ sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub
 sudo ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub
 ```
 
-Only matching key types need to be compared. Copy the full contents of
-`vps_known_hosts` into the `VPS_KNOWN_HOSTS` GitHub Actions secret. Do not use
-an unverified `ssh-keyscan` result: scanning discovers the presented key but
-does not prove the server's identity.
+Only matching key types need to be compared. After verifying the fingerprints,
+display the saved host keys on your computer:
+
+```bash
+cat ~/YOUR_APP_NAME-vps-known-hosts
+```
+
+Copy the full output into the `VPS_KNOWN_HOSTS` GitHub Actions secret. Do not
+use an unverified `ssh-keyscan` result: scanning discovers the presented key
+but does not prove the server's identity.
 
 ### Add the GitHub Actions secrets
 
@@ -853,9 +888,35 @@ environment used by the workflow:
 | `VPS_HOST`            | Server hostname or IP                               |
 | `VPS_USER`            | Deployment user, such as `deploy`                   |
 | `VPS_PORT`            | SSH port; optional, defaults to `22`                |
-| `VPS_APP_PATH`        | Application checkout, such as `/home/deploy/my_app` |
+| `VPS_APP_PATH`        | Absolute application directory reported by `pwd`    |
 | `VPS_SSH_PRIVATE_KEY` | Private SSH deployment key                          |
 | `VPS_KNOWN_HOSTS`     | Verified SSH host-key lines                         |
+
+To get `VPS_APP_PATH`, log in to the VPS as `VPS_USER`, change into the
+production application's directory, and run:
+
+```bash
+pwd
+```
+
+Copy the complete output, such as `/home/deploy/my_app` or `/root/my_app`, into
+the `VPS_APP_PATH` GitHub Actions secret. Do not use the path from your local
+computer.
+
+### Trigger CI and deployment manually
+
+After saving all six secrets, commit and push the installed workflow. In the
+application's GitHub repository, open **Actions → CI and deploy**, select **Run
+workflow**, choose the branch to deploy, and select **Run workflow** again.
+
+The manual run executes CI first. If CI succeeds, the deployment job connects
+to the VPS and runs the deployment. Open the deployment job in GitHub Actions
+to see whether the SSH connection and deployment succeeded. A manual run is a
+real production deployment, not a connection-only test.
+
+The workflow also continues to deploy automatically after CI succeeds on a
+push to the configured `main` or `master` branch. Pull requests run CI without
+deploying.
 
 The resulting key placement is:
 
