@@ -11,11 +11,19 @@ prompt:
 > examples, and documentation. If `rel/overlays/bin/server` or
 > `rel/overlays/bin/migrate` is missing, run `mix phx.gen.release` locally and
 > retain its generated release files. Preserve secrets as placeholders and
-> never read, generate, commit, or print real credentials. Do not replace `@@APP_NAME@@`,
-> `@@APP_DIR@@`, or `@@ENV_FILE@@` in `phoenix.service.tpl`; `deploy.sh` fills
-> those values at deployment time. Keep `.env.prod` ignored and run relevant
-> syntax or validation checks after making changes. Summarize every value that
-> the operator must still configure in GitHub Actions or on the server.
+> never read, generate, commit, or print real credentials. In
+> `.deploy/.env.prod.example`, keep descriptive placeholders rather than
+> substituting real or machine-specific values. In particular, preserve the
+> complete connection-string structure
+> `DATABASE_URL="ecto://DATABASE_USER:DATABASE_PASSWORD@localhost/DATABASE_NAME"`;
+> `DATABASE_USER`, `DATABASE_PASSWORD`, and `DATABASE_NAME` must remain literal
+> placeholders for the operator to replace on the server. Likewise, keep
+> `SECRET_KEY_BASE="GENERATE_WITH_MIX_PHX_GEN_SECRET"` and safe example values
+> for other secrets. Do not replace `@@APP_NAME@@`, `@@APP_DIR@@`, or
+> `@@ENV_FILE@@` in `phoenix.service.tpl`; `deploy.sh` fills those values at
+> deployment time. Keep `.env.prod` ignored and run relevant syntax or
+> validation checks after making changes. Summarize every value that the
+> operator must still configure in GitHub Actions or on the server.
 
 ## Files the AI should review
 
@@ -35,6 +43,7 @@ The AI should leave the repository with:
 - committed Phoenix release server and migration scripts;
 - a health endpoint that returns success without authentication;
 - every required runtime variable documented in `.env.prod.example`;
+- a complete placeholder `DATABASE_URL` with no real database credentials;
 - `.env.prod` listed in `.gitignore`;
 - no real secret values in tracked files;
 - commands and paths matching the target repository;
