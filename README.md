@@ -171,6 +171,26 @@ startup. It does not test `config/runtime.exs` production settings, production
 secrets, a Linux build, or `systemd`; the first manual VPS deployment remains
 the final production check.
 
+### If Mix reports an invalid regular expression term
+
+A development release must store values from `config/dev.exs`. If Mix reports
+that a configured regular expression needs the `/E` modifier, add `E` after
+that expression's closing delimiter. For example, change:
+
+```elixir
+~r/priv\/static\/(?!uploads\/).*(js|css|png|jpeg|jpg|gif|svg)$/
+```
+
+to:
+
+```elixir
+~r/priv\/static\/(?!uploads\/).*(js|css|png|jpeg|jpg|gif|svg)$/E
+```
+
+Apply the same change to any other configured regex named in the error, then
+run `./deploy.sh local` again. The `E` modifier makes the compiled regex safe
+for Mix to export into a release configuration.
+
 ## 2. Prepare the server checkout
 
 The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
