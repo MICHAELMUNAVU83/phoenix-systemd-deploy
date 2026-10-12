@@ -1,16 +1,103 @@
+<div align="center">
+
 # Phoenix systemd deploy
 
-A small, repo-scoped deployment kit for Phoenix applications on Linux. Install
-it into each Phoenix repository and commit it with the application. Each
-repository then owns its deployment scripts, systemd template, and CI workflow,
-so changes can be reviewed and released together with the code they affect.
+**A small, repo-scoped deployment kit for Phoenix applications on Linux.**
 
-The kit builds a Mix release, runs database migrations, installs a user-level
-systemd service, restarts the application, and checks that it responds over
-HTTP. The same CI script is used locally and in GitHub Actions.
+Build a release, migrate, restart under systemd, and health-check it,<br>
+with the same script on your laptop, on your VPS, and in GitHub Actions.
 
-The installer adds `rename.md`, which contains a ready-to-use prompt for an AI
-coding assistant to customize the deployment for the target repository.
+![Phoenix](https://img.shields.io/badge/Phoenix-releases-FD4F00?logo=phoenixframework&logoColor=white)
+![systemd](https://img.shields.io/badge/systemd-user%20service-30363D?logo=linux&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%20%2B%20deploy-2088FF?logo=githubactions&logoColor=white)
+![Databases](https://img.shields.io/badge/database-PostgreSQL%20%7C%20MySQL-4169E1?logo=postgresql&logoColor=white)
+
+[Quick start](#quick-start) ·
+[Setup guide](#setup-guide) ·
+[Commands](#command-reference) ·
+[GitHub Actions](#configure-github-actions-deployment) ·
+[Configuration](#configuration-overrides)
+
+</div>
+
+---
+
+## Why this kit
+
+Install it into each Phoenix repository and commit it with the application.
+Each repository then owns its deployment scripts, systemd template, and CI
+workflow, so changes can be reviewed and released together with the code they
+affect.
+
+| | |
+| --- | --- |
+| 📦 **Builds** | Assembles a Mix release from your application |
+| 🗄️ **Migrates** | Runs the release migration command against your database |
+| ⚙️ **Supervises** | Installs a user-level systemd service that restarts on failure |
+| 🩺 **Verifies** | Checks that the application responds over HTTP |
+| ⏪ **Rolls back** | Keeps numbered release snapshots you can restore |
+| 🔁 **One CI script** | The same `ci.sh` runs locally and in GitHub Actions |
+
+```mermaid
+flowchart LR
+    A[Push or merge] --> B[CI: format, compile, test]
+    B --> C[SSH to VPS]
+    C --> D[Build release]
+    D --> E[Run migrations]
+    E --> F[Restart systemd service]
+    F --> G{Health check}
+    G -- healthy --> H[Save release snapshot]
+    G -- failed --> I[Print status and journal]
+```
+
+## Quick start
+
+From the root of your Phoenix application:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/MICHAELMUNAVU83/phoenix-systemd-deploy/main/install.sh?$(date +%s)" | bash
+```
+
+Then see what you can do. This only displays help; it does not build, migrate,
+restart, or otherwise change the application:
+
+```bash
+./deploy.sh commands
+```
+
+> [!TIP]
+> The installer adds `rename.md`, which contains a ready-to-use prompt for an AI
+> coding assistant to customize the deployment for the target repository. Open
+> it, give its prompt to your assistant, and review the resulting changes
+> before committing them.
+
+## Contents
+
+**Setup guide**
+
+1. [Add the kit to a Phoenix repository](#1-add-the-kit-to-a-phoenix-repository)
+   - [Test the release workflow locally](#test-the-release-workflow-locally)
+   - [Check everything before pushing](#check-everything-before-pushing)
+2. [Prepare the server checkout](#2-prepare-the-server-checkout)
+3. [Create the production environment](#3-create-the-production-environment)
+4. [Verify the production database](#4-verify-the-production-database)
+5. [Test the deployment manually on the production server](#5-test-the-deployment-manually-on-the-production-server)
+6. [Operate the service](#6-operate-the-service)
+7. [Deploy updates](#7-deploy-updates)
+
+**Automation**
+
+- [Run CI locally](#run-ci-locally)
+- [Configure GitHub Actions deployment](#configure-github-actions-deployment)
+
+**Reference**
+
+- [Repository layout](#repository-layout)
+- [Command reference](#command-reference)
+- [Configuration overrides](#configuration-overrides)
+- [What a deployment does](#what-a-deployment-does)
+
+---
 
 ## Repository layout
 
@@ -30,12 +117,19 @@ my_app/
 └── ...
 ```
 
-The `.deploy/` folder and GitHub Actions workflow **must be committed** because
-they contain reusable scripts and placeholder values. The real `.env.prod` is
-different: it contains production passwords and secrets, lives at the
-application root on the server, and **must never be committed**.
+| Path | Commit it? | Why |
+| --- | :---: | --- |
+| `.deploy/` and `.github/workflows/` | ✅ **Must** | Reusable scripts and placeholder values |
+| `deploy.sh`, `rename.md` | ✅ Yes | The deployment entry point and customization prompt |
+| `.env.prod` | ❌ **Never** | Production passwords and secrets; lives at the application root on the server |
+
+---
+
+# Setup guide
 
 ## 1. Add the kit to a Phoenix repository
+
+### Install
 
 Open Terminal and change into your Phoenix application. Copy and run this
 command first, replacing the example path with the path to your application:
@@ -62,30 +156,10 @@ The installer:
 6. adds `/.env.prod` to `.gitignore` so production secrets cannot be committed
    accidentally.
 
-You can safely run the same `curl` command again when a newer deployment kit
-is available. Existing installations update these shared scripts:
-
-```text
-deploy.sh
-.deploy/ci.sh
-```
-
-The updater otherwise preserves `.deploy/.env.prod.example`,
-`.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, `rename.md`,
-and all application files because those may have app-specific customizations.
-If the existing workflow still has the standard push-only deployment
-condition, the updater adds `workflow_dispatch` while preserving its `main` or
-`master` deployment branch. It warns instead of changing a workflow it cannot
-safely recognize. Review every update before committing it:
-
-```bash
-git diff -- deploy.sh .deploy/ci.sh .github/workflows/ci-deploy.yml
-./.deploy/ci.sh
-```
-
-For security, you can inspect
-[`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
-before running it.
+> [!NOTE]
+> For security, you can inspect
+> [`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
+> before running it.
 
 After installation, start by viewing every available deployment command:
 
@@ -98,6 +172,35 @@ change the application.
 
 Open `rename.md` in the target repository and give its prompt to your AI coding
 assistant. Review the resulting changes before committing them.
+
+<details>
+<summary><b>Updating an existing installation</b></summary>
+
+<br>
+
+You can safely run the same `curl` command again when a newer deployment kit
+is available. Existing installations update these shared scripts:
+
+```text
+deploy.sh
+.deploy/ci.sh
+```
+
+The updater otherwise preserves `.deploy/.env.prod.example`,
+`.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, `rename.md`,
+and all application files because those may have app-specific customizations.
+
+If the existing workflow still has the standard push-only deployment
+condition, the updater adds `workflow_dispatch` while preserving its `main` or
+`master` deployment branch. It warns instead of changing a workflow it cannot
+safely recognize. Review every update before committing it:
+
+```bash
+git diff -- deploy.sh .deploy/ci.sh .github/workflows/ci-deploy.yml
+./.deploy/ci.sh
+```
+
+</details>
 
 ### Generate Phoenix release support locally
 
@@ -115,9 +218,21 @@ If both files exist, skip this step. If they are missing, run:
 mix phx.gen.release
 ```
 
-Run this locally—not on the production server. Review the generated files and
+Run this locally, not on the production server. Review the generated files and
 commit them with the application. You normally run this generator only once;
 future deployments reuse those committed files.
+
+> [!NOTE]
+> A sandboxed coding assistant may ask permission because Mix needs a local
+> filesystem lock or writes tools under your user account. That permission is
+> for running the one-time generator locally; it is not part of a production
+> deploy. Review the request before allowing it, as you would for any local
+> command.
+
+<details>
+<summary><b>The new <code>rel/</code> folder does not show up in Git</b></summary>
+
+<br>
 
 If the new `rel/` folder does not appear in Source Control or
 `git status --short`, check whether Git is ignoring it:
@@ -146,10 +261,9 @@ git status --short rel
 git diff --cached -- rel
 ```
 
-A sandboxed coding assistant may ask permission because Mix needs a local
-filesystem lock or writes tools under your user account. That permission is for
-running the one-time generator locally; it is not part of a production deploy.
-Review the request before allowing it, as you would for any local command.
+</details>
+
+### Confirm the branch and the secret protection
 
 Confirm the branch used by the deployment workflow:
 
@@ -172,6 +286,8 @@ grep -n '^/.env\.prod$' .gitignore
 This rule ignores only the real `.env.prod` file at the repository root. It
 does not ignore `.deploy/.env.prod.example`, which contains placeholders and
 should be committed so other operators know which variables are required.
+
+### Commit the kit
 
 Stage the installed deployment files and `.gitignore` protection:
 
@@ -223,16 +339,17 @@ You can also inspect the exact `run_local` function without executing it:
 sed -n '/^run_local()/,/^}/p' deploy.sh
 ```
 
-`./deploy.sh local` is not a dry run. It:
-
-1. uses `MIX_ENV=dev` and the database configuration in `config/dev.exs`;
-2. fetches dependencies and compiles the application;
-3. builds and digests the static assets;
-4. assembles a development release under `_build/dev/rel/`;
-5. cleans generated digest copies from the source `priv/static/` directory;
-6. runs the generated release migration command against the development
-   database; and
-7. starts the release in the foreground until you press **Ctrl-C**.
+> [!IMPORTANT]
+> `./deploy.sh local` is **not** a dry run. It:
+>
+> 1. uses `MIX_ENV=dev` and the database configuration in `config/dev.exs`;
+> 2. fetches dependencies and compiles the application;
+> 3. builds and digests the static assets;
+> 4. assembles a development release under `_build/dev/rel/`;
+> 5. cleans generated digest copies from the source `priv/static/` directory;
+> 6. runs the generated release migration command against the development
+>    database; and
+> 7. starts the release in the foreground until you press **Ctrl-C**.
 
 Then build a development release, run its release migration command against
 the development database, and start it in the foreground:
@@ -247,13 +364,21 @@ In another terminal, test it:
 curl --fail http://localhost:4000/
 ```
 
-Press **Ctrl-C** in the first terminal to stop the release. This verifies asset
-building, release creation, the generated migration script, and release
-startup. It does not test `config/runtime.exs` production settings, production
-secrets, a Linux build, or `systemd`; the first manual VPS deployment remains
-the final production check.
+Press **Ctrl-C** in the first terminal to stop the release.
 
-### If Mix reports an invalid regular expression term
+| Local mode verifies | Local mode does not test |
+| --- | --- |
+| Asset building | `config/runtime.exs` production settings |
+| Release creation | Production secrets |
+| The generated migration script | A Linux build |
+| Release startup | `systemd` |
+
+The first manual VPS deployment remains the final production check.
+
+<details>
+<summary><b>Troubleshooting: Mix reports an invalid regular expression term</b></summary>
+
+<br>
 
 A development release must store values from `config/dev.exs`. If Mix reports
 that a configured regular expression needs the `/E` modifier, add `E` after
@@ -295,6 +420,13 @@ find config -type f -name '*.bak' -delete
 ./deploy.sh local
 ```
 
+</details>
+
+<details>
+<summary><b>Troubleshooting: leftover fingerprinted files under <code>priv/static</code></b></summary>
+
+<br>
+
 If an earlier local build left fingerprinted files and `.gz` copies under
 `priv/static`, remove only Phoenix's generated digest output with:
 
@@ -302,12 +434,20 @@ If an earlier local build left fingerprinted files and `.gz` copies under
 MIX_ENV=dev mix phx.digest.clean --all
 ```
 
-Keep and commit your original images, `robots.txt`, and other source assets.
-Commit `.deploy/`, `.github/workflows/`, `deploy.sh`, the generated `rel/`
-scripts, and `lib/YOUR_APP/release.ex`. Delete `README-FIRST.md` after setup.
-Files ending in `.bak`, `.DS_Store`, `.env.prod`, and
-`priv/static/cache_manifest.json` should not be committed; the installer adds
-ignore rules for them.
+</details>
+
+### What to commit and what to leave out
+
+| ✅ Commit | ❌ Do not commit |
+| --- | --- |
+| `.deploy/` and `.github/workflows/` | `.env.prod` |
+| `deploy.sh` | Files ending in `.bak` |
+| The generated `rel/` scripts | `.DS_Store` |
+| `lib/YOUR_APP/release.ex` | `priv/static/cache_manifest.json` |
+| Original images, `robots.txt`, and other source assets | |
+
+The installer adds ignore rules for everything in the right-hand column. Delete
+`README-FIRST.md` after setup.
 
 If the application stores user-generated files under `priv/static/uploads/`,
 add `/priv/static/uploads/` to `.gitignore` too. Do not add that rule if the
@@ -342,6 +482,8 @@ Make sure `.env.prod`, `.DS_Store`, backup files, uploads, and generated digest
 files are not staged. Push only after the CI script passes and the staged diff
 contains the intended source, release, and deployment files.
 
+---
+
 ## 2. Prepare the server checkout
 
 The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
@@ -360,9 +502,10 @@ sessions started by GitHub Actions. Verify the installation as that user:
 
 ### Give the server access to a private GitHub repository
 
-Do this **before cloning** if the application repository is private. Skip this
-subsection if the repository is public or the server already has working
-GitHub credentials.
+> [!IMPORTANT]
+> Do this **before cloning** if the application repository is private. Skip
+> this subsection if the repository is public or the server already has working
+> GitHub credentials.
 
 [GitHub deploy keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
 belong to one repository and cannot be reused for another. Therefore, every
@@ -373,12 +516,14 @@ detected automatically. In every command below, replace `YOUR_APP_NAME` with a
 short, unique name such as `kabeberi`. Use the same name consistently for that
 application. A second application on the VPS must use a different name.
 
-First, check which deploy keys already exist:
+**1. Check which deploy keys already exist**
 
 ```bash
 install -d -m 700 ~/.ssh
 find ~/.ssh -maxdepth 1 -type f -name 'github_*_deploy*' -print
 ```
+
+**2. Create the key, or reuse the existing one**
 
 If a key for this same application already exists, reuse it. Otherwise, create
 it. When asked for a passphrase, press Enter twice so automated deployments can
@@ -394,9 +539,14 @@ fi
 
 This creates two app-specific files:
 
-- `~/.ssh/github_YOUR_APP_NAME_deploy` is the private key. It stays on the VPS and
-  must never be copied to GitHub or committed.
-- `~/.ssh/github_YOUR_APP_NAME_deploy.pub` is the public key. Display it with:
+| File | What it is | Where it goes |
+| --- | --- | --- |
+| `~/.ssh/github_YOUR_APP_NAME_deploy` | Private key | Stays on the VPS. Must never be copied to GitHub or committed |
+| `~/.ssh/github_YOUR_APP_NAME_deploy.pub` | Public key | Pasted into the repository's deploy keys on GitHub |
+
+**3. Add the public key to GitHub**
+
+Display the public key:
 
 ```bash
 cat ~/.ssh/github_YOUR_APP_NAME_deploy.pub
@@ -406,8 +556,10 @@ Copy the complete output. In the **application repository** on GitHub, open
 **Settings → Deploy keys → Add deploy key**, paste the public key, and save it.
 Read access is sufficient; do not enable write access.
 
-Give this repository its own SSH alias. This command checks before adding it,
-so rerunning it does not duplicate the configuration:
+**4. Give this repository its own SSH alias**
+
+This command checks before adding it, so rerunning it does not duplicate the
+configuration:
 
 ```bash
 if ! grep -qxF "Host github-YOUR_APP_NAME" ~/.ssh/config 2>/dev/null; then
@@ -422,7 +574,7 @@ fi
 chmod 600 ~/.ssh/config
 ```
 
-Test the connection:
+**5. Test the connection**
 
 ```bash
 ssh -T git@github-YOUR_APP_NAME
@@ -444,6 +596,8 @@ cd ~
 git clone git@github-YOUR_APP_NAME:OWNER/REPOSITORY.git
 cd YOUR_APPLICATION_REPOSITORY_NAME
 ```
+
+---
 
 ## 3. Create the production environment
 
@@ -470,8 +624,13 @@ git status --short
 ```
 
 The first command should print the matching `.gitignore` rule. The second
-command must not list `.env.prod`. Stop and fix `.gitignore` before adding any
-secret if either check fails. Never run `git add -f .env.prod`.
+command must not list `.env.prod`.
+
+> [!CAUTION]
+> Stop and fix `.gitignore` before adding any secret if either check fails.
+> Never run `git add -f .env.prod`.
+
+### Generate the secret key
 
 Generate `SECRET_KEY_BASE` once and keep it stable between deployments:
 
@@ -481,6 +640,8 @@ mix phx.gen.secret
 
 If project dependencies are not installed yet, use `openssl rand -base64 64`.
 Changing this value later invalidates existing signed cookies and sessions.
+
+### Fill in the values
 
 Edit `.env.prod` with the application's production values:
 
@@ -494,23 +655,21 @@ FORCE_SSL="true"
 RELEASES_TO_KEEP="5"
 ```
 
-Keep the `ecto://` scheme for both PostgreSQL and MySQL. Ecto accepts a generic
-URL scheme and uses the repository adapter configured by the application to
-select PostgreSQL or MySQL. Do not change it to `mysql://` unless the
-application's own runtime configuration explicitly requires that format.
+| Variable | Notes |
+| --- | --- |
+| `DATABASE_URL` | Keep the `ecto://` scheme for both PostgreSQL and MySQL. Ecto accepts a generic URL scheme and uses the repository adapter configured by the application to select PostgreSQL or MySQL. Do not change it to `mysql://` unless the application's own runtime configuration explicitly requires that format. |
+| `DATABASE_NAME` (inside the URL) | Replace with the exact database name you created and want this application to use, for example `my_app_prod`. It is not automatically derived from `APP_NAME`. |
+| `FORCE_SSL` | Use `"false"` only while testing direct HTTP without an HTTPS reverse proxy. |
 
-Replace `DATABASE_NAME` with the exact database name you created and want this
-application to use—for example, `my_app_prod`. It is not automatically derived
-from `APP_NAME`.
-
-Use `FORCE_SSL="false"` only while testing direct HTTP without an HTTPS reverse
-proxy. Add every other runtime dependency to this file as well, for example:
+Add every other runtime dependency to this file as well, for example:
 
 ```bash
 FACE_SEARCH_URL="http://127.0.0.1:5000"
 S3_BUCKET="my-production-bucket"
 AWS_REGION="eu-west-1"
 ```
+
+### Check the file
 
 After editing `.env.prod`, check its shell syntax and list the configured
 variable names without printing their secret values:
@@ -526,6 +685,8 @@ Then display the deployment commands available in this repository:
 ./deploy.sh commands
 ```
 
+---
+
 ## 4. Verify the production database
 
 This deployment process assumes the production database and its user already
@@ -533,9 +694,15 @@ exist and that `DATABASE_URL` contains working credentials. You do not need to
 create the database as part of this deployment procedure.
 
 The deployment script runs the release migration command (equivalent to
-`mix ecto.migrate`) against the existing database. Migrations create and update
-the application's tables, but they do not create the database, create database
-users, or grant permissions.
+`mix ecto.migrate`) against the existing database.
+
+| Migrations do | Migrations do not |
+| --- | --- |
+| Create and update the application's tables | Create the database |
+| | Create database users |
+| | Grant permissions |
+
+---
 
 ## 5. Test the deployment manually on the production server
 
@@ -543,14 +710,17 @@ Do this before configuring GitHub Actions. It proves that the server, database,
 environment file, release, systemd service, and health check work together.
 GitHub Actions will eventually run this same deployment command.
 
-`./deploy.sh deploy` is not a dry run: it builds the release, runs migrations
-against the database in `.env.prod`, and restarts the service. To rehearse
-without touching production data, use a separate Linux staging server, staging
-database, and staging `.env.prod` file.
+> [!WARNING]
+> `./deploy.sh deploy` is **not** a dry run: it builds the release, runs
+> migrations against the database in `.env.prod`, and restarts the service. To
+> rehearse without touching production data, use a separate Linux staging
+> server, staging database, and staging `.env.prod` file.
 
-Do not run `./deploy.sh deploy` on macOS: use `./deploy.sh local` there instead.
-The full `deploy` command installs a Linux `systemd` service. SSH into the VPS
-as the deployment user, then change into the application:
+> [!NOTE]
+> Do not run `./deploy.sh deploy` on macOS: use `./deploy.sh local` there
+> instead. The full `deploy` command installs a Linux `systemd` service.
+
+SSH into the VPS as the deployment user, then change into the application:
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
@@ -574,7 +744,7 @@ creates `~/.config/systemd/user/my_app.service`, builds and migrates the release
 enables and starts the service, and performs an HTTP health check. A successful
 run ends with `Deployment is healthy`.
 
-Verify the running service:
+### Verify the running service
 
 ```bash
 ./deploy.sh status
@@ -588,6 +758,11 @@ configuration. A connection failure means the service did not bind to the
 configured `PORT`; changing the check to the public IP or removing it would
 hide that startup problem.
 
+<details>
+<summary><b>Skipping the health check (not recommended)</b></summary>
+
+<br>
+
 To deliberately allow deployments to finish without verifying that the
 application started, add this to `.env.prod` on the VPS:
 
@@ -599,9 +774,12 @@ This is not recommended for normal production use: GitHub Actions may report a
 successful deployment even when the service is unavailable. Set it back to
 `"true"` after diagnosing the startup problem.
 
-If deployment fails, the script stops waiting when the service is inactive and
-prints its status and recent journal entries. You can also inspect them
-directly:
+</details>
+
+### If the deployment fails
+
+The script stops waiting when the service is inactive and prints its status and
+recent journal entries. You can also inspect them directly:
 
 ```bash
 journalctl --user -u YOUR_APP_NAME.service -n 100 --no-pager
@@ -609,6 +787,8 @@ journalctl --user -u YOUR_APP_NAME.service -n 100 --no-pager
 
 Fix the reported problem and run `./deploy.sh deploy` again. The command is
 intended to be safely rerun after configuration or application changes.
+
+### Enable lingering
 
 Enable lingering once so the deployment user's service starts after a reboot
 without an active SSH session. These are system-level commands and can be run
@@ -624,43 +804,42 @@ that owns and deploys the application; `$(whoami)` supplies that username
 automatically. This is normally the only setup command that requires root
 privileges.
 
+---
+
 ## 6. Operate the service
 
-Use systemd while logged in as the deployment user:
+### Command reference
+
+Run these from the application root:
+
+| Command | What it does |
+| --- | --- |
+| `./deploy.sh commands` | Lists every supported command and what it does, without starting a deployment |
+| `./deploy.sh up` | Starts or restarts the existing release |
+| `./deploy.sh deploy` | Builds the release, runs migrations, and restarts it |
+| `./deploy.sh status` | Displays the service's systemd status |
+| `./deploy.sh console` | Attaches a remote IEx shell to the running production release |
+| `./deploy.sh logs` | Opens the complete service journal in a scrollable pager |
+| `./deploy.sh logs-follow` | Streams new log entries |
+| `./deploy.sh releases` | Lists the saved release snapshots |
+| `./deploy.sh rollback N` | Restores release snapshot number `N` |
+| `./deploy.sh local` | Builds and runs a development release in the foreground (no systemd) |
+
+A few usage notes:
+
+- **`console`**: exit IEx normally when finished; do not stop the application
+  from the remote shell.
+- **`logs`**: navigate with the arrow keys, **Page Up**, or **Page Down**,
+  search with `/text`, and press `q` to exit.
+- **`logs-follow`**: press **Ctrl-C** to stop following.
+
+Prefer plain systemd? Use it while logged in as the deployment user:
 
 ```bash
 systemctl --user status my_app.service
 systemctl --user restart my_app.service
 journalctl --user -u my_app.service -f
 ```
-
-Or use the simpler repo-local commands from the application root:
-
-```bash
-./deploy.sh commands
-./deploy.sh up
-./deploy.sh deploy
-./deploy.sh status
-./deploy.sh console
-./deploy.sh logs
-./deploy.sh logs-follow
-./deploy.sh releases
-```
-
-Run `./deploy.sh commands` at any time to see every supported command and what
-it does without starting a deployment.
-
-`up` starts or restarts the existing release, `deploy` builds the release, runs
-migrations, and restarts it, and `status` displays its systemd status.
-
-Use `./deploy.sh console` to attach a remote IEx shell to the running production
-release. Exit IEx normally when finished; do not stop the application from the
-remote shell.
-
-Use `./deploy.sh logs` to open the complete service journal in a scrollable
-pager. Navigate with the arrow keys, **Page Up**, or **Page Down**, search with
-`/text`, and press `q` to exit. Use `./deploy.sh logs-follow` to stream new log
-entries and press **Ctrl-C** to stop following them.
 
 ### What happens if the application is killed?
 
@@ -672,11 +851,12 @@ Restart=on-failure
 RestartSec=5
 ```
 
-If the BEAM process crashes, receives `SIGKILL`, or exits with a failure status,
-systemd normally starts it again after five seconds. An intentional
-`systemctl --user stop YOUR_APP_NAME.service` does not trigger a restart.
-`./deploy.sh local` runs in the foreground without systemd, so it also does not
-restart automatically if it is stopped or killed.
+| Situation | Restarts automatically? |
+| --- | :---: |
+| The BEAM process crashes, receives `SIGKILL`, or exits with a failure status | ✅ After five seconds |
+| An intentional `systemctl --user stop YOUR_APP_NAME.service` | ❌ |
+| `./deploy.sh local` is stopped or killed (foreground, no systemd) | ❌ |
+| The VPS reboots | ✅ Only when the service is enabled and lingering is enabled for the deployment user, as described in step 5 |
 
 Check the production service after a failure:
 
@@ -693,8 +873,7 @@ systemctl --user reset-failed YOUR_APP_NAME.service
 ./deploy.sh up
 ```
 
-The service also starts after a VPS reboot only when it has been enabled and
-lingering is enabled for the deployment user, as described in step 5.
+### Releases and rollback
 
 Every successful deployment saves a numbered release snapshot. The newest
 snapshot is number 1. The value of `RELEASES_TO_KEEP` in `.env.prod` controls
@@ -722,14 +901,17 @@ The rollback replaces the active application release, restarts the service,
 and performs the health check. If that check fails, the script restores the
 release that was active before the rollback.
 
-> **Database warning:** rollback changes application code only. It does not
-> reverse database migrations. Before deploying a migration, make it compatible
-> with both the old and new application versions, or prepare a separately
-> reviewed database rollback procedure.
+> [!WARNING]
+> **Rollback changes application code only.** It does not reverse database
+> migrations. Before deploying a migration, make it compatible with both the
+> old and new application versions, or prepare a separately reviewed database
+> rollback procedure.
 
 On your local development machine, run `./.deploy/ci.sh` for formatting,
 compilation, and tests. Use `./deploy.sh local` when you also want to smoke-test
 the production release without attempting to install a Linux service.
+
+---
 
 ## 7. Deploy updates
 
@@ -746,26 +928,9 @@ The running service restarts only after the release builds and migrations
 succeed. Because `.deploy/` belongs to the application repository, deployment
 script changes arrive with the same pull as application changes.
 
-## Configuration overrides
+---
 
-| Variable           | Default                                          |
-| ------------------ | ------------------------------------------------ |
-| `APP_DIR`          | Current directory                                |
-| `APP_NAME`         | Detected from `mix.exs`                          |
-| `SERVICE_NAME`     | `APP_NAME.service`                               |
-| `ENV_FILE`         | `APP_DIR/.env.prod`                              |
-| `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl`                    |
-| `HEALTH_PATH`      | `/`                                              |
-| `HEALTH_CHECK_ENABLED` | `true`; set to `false` to skip verification  |
-| `PORT`             | `4000`, unless set in `.env.prod`                |
-| `RELEASES_TO_KEEP` | `5`; number of successful releases to retain     |
-| `RELEASES_DIR`     | User data directory outside the Git checkout     |
-
-For example:
-
-```bash
-HEALTH_PATH=/health SERVICE_NAME=my-app.service ./deploy.sh deploy
-```
+# Automation
 
 ## Run CI locally
 
@@ -786,23 +951,28 @@ The application must already be configured with the appropriate Ecto adapter
 (`postgrex` for PostgreSQL or `myxql` for MySQL), and the production database
 and user must already exist.
 
-On GitHub Actions, `.deploy/ci.sh` inspects `mix.lock`. It starts MySQL 8.4 when
-it finds `myxql`; otherwise it starts PostgreSQL 16. To override detection, add
-the repository variable `CI_DATABASE_ENGINE` under **Settings → Secrets and
-variables → Actions → Variables** and set it to `mysql` or `postgres`.
+On GitHub Actions, `.deploy/ci.sh` inspects `mix.lock`:
 
-The default CI containers use the conventional generated Phoenix test
-credentials: PostgreSQL user/password `postgres`/`postgres`, or MySQL user
-`root` with an empty password. If the application's `config/test.exs` uses
-different credentials, customize the database startup in `.deploy/ci.sh` or
-the test configuration. Local CI continues to use the database already
-configured on the developer's computer; it does not start Docker.
+| Found in `mix.lock` | CI database | Default credentials |
+| --- | --- | --- |
+| `myxql` | MySQL 8.4 | User `root` with an empty password |
+| Anything else | PostgreSQL 16 | User/password `postgres`/`postgres` |
+
+To override detection, add the repository variable `CI_DATABASE_ENGINE` under
+**Settings → Secrets and variables → Actions → Variables** and set it to
+`mysql` or `postgres`.
+
+The defaults are the conventional generated Phoenix test credentials. If the
+application's `config/test.exs` uses different credentials, customize the
+database startup in `.deploy/ci.sh` or the test configuration. Local CI
+continues to use the database already configured on the developer's computer;
+it does not start Docker.
 
 ### Customize CI checks
 
 The included CI checks are a starting point. You can edit the `test` job in
 `.github/workflows/ci-deploy.yml` to add, remove, or replace checks for the
-application—for example, Credo, Dialyzer, security scanning, JavaScript tests,
+application, for example Credo, Dialyzer, security scanning, JavaScript tests,
 or asset builds.
 
 Keep the job identifier named `test` if the repository ruleset requires the
@@ -816,12 +986,20 @@ The installed workflow runs CI for pushes and pull requests. Deployment runs
 only after CI succeeds on a push to the `main` or `master` branch selected by
 the installer.
 
+| Event | CI | Deploy |
+| --- | :---: | :---: |
+| Pull request | ✅ | ❌ |
+| Push to the configured `main` or `master` branch | ✅ | ✅ After CI succeeds |
+| Manual **Run workflow** | ✅ | ✅ After CI succeeds |
+
 ### One-time deployment setup
 
 Do this once for each GitHub repository. You do not need to repeat it for
 future deployments.
 
-On your own computer—not on the VPS—create the deployment key pair in your
+**1. Create the key pair, on your own computer**
+
+On your own computer, not on the VPS, create the deployment key pair in your
 home directory:
 
 ```bash
@@ -839,14 +1017,18 @@ files locally on your computer:
 Do not copy either file to the VPS. You will copy and paste only the public
 key's text in the next steps.
 
+**2. Copy the public key**
+
 Still on your computer, display the public key and copy its entire single line:
 
 ```bash
 cat ~/github-actions-YOUR_APP_NAME.pub
 ```
 
+**3. Authorize it on the VPS**
+
 Choose the VPS account that GitHub Actions will use. Replace `YOUR_VPS_USER`
-with that account name—for example, `deploy` for a dedicated deployment user
+with that account name, for example `deploy` for a dedicated deployment user
 or `root` if the server is configured for root deployments. Log in as that
 user:
 
@@ -860,7 +1042,7 @@ Once logged in, prepare that user's SSH directory:
 install -d -m 700 ~/.ssh
 ```
 
-On the VPS, open the authorized-keys file:
+Open the authorized-keys file:
 
 ```bash
 nano ~/.ssh/authorized_keys
@@ -869,19 +1051,14 @@ nano ~/.ssh/authorized_keys
 Paste the copied public-key line on a new line. Save with Ctrl-O, press Enter,
 and then exit with Ctrl-X.
 
-Set the correct file permission:
+Set the correct file permission, then exit the VPS:
 
 ```bash
 chmod 600 ~/.ssh/authorized_keys
-```
-
-Exit the VPS:
-
-```bash
 exit
 ```
 
-Then test the deployment key from your computer:
+**4. Test the key from your computer**
 
 ```bash
 ssh -i ~/github-actions-YOUR_APP_NAME -p 22 YOUR_VPS_USER@YOUR_VPS_HOST
@@ -890,6 +1067,8 @@ ssh -i ~/github-actions-YOUR_APP_NAME -p 22 YOUR_VPS_USER@YOUR_VPS_HOST
 The test should log in without asking for the VPS user's password. Use the same
 account name later for the GitHub Actions `VPS_USER` secret. The public key is
 authorized only for the account whose `~/.ssh/authorized_keys` file you edited.
+
+**5. Save the private key as a GitHub secret**
 
 Back on your computer, display the private key locally:
 
@@ -904,13 +1083,15 @@ Actions → New repository secret**. Create a secret named
 `VPS_SSH_PRIVATE_KEY`, paste the copied private-key text into the secret value,
 and save it.
 
-Once deployment works, securely delete the local
-`github-actions-YOUR_APP_NAME` private-key file. You may keep
-`github-actions-YOUR_APP_NAME.pub`. Never commit either key file to Git.
+> [!CAUTION]
+> Once deployment works, securely delete the local
+> `github-actions-YOUR_APP_NAME` private-key file. You may keep
+> `github-actions-YOUR_APP_NAME.pub`. Never commit either key file to Git.
 
-If several projects deploy to the same VPS, use a separate key for each
-repository. This lets you remove one project's access without affecting the
-others.
+> [!TIP]
+> If several projects deploy to the same VPS, use a separate key for each
+> repository. This lets you remove one project's access without affecting the
+> others.
 
 ### Record and verify the VPS host key
 
@@ -944,9 +1125,11 @@ display the saved host keys on your computer:
 cat ~/YOUR_APP_NAME-vps-known-hosts
 ```
 
-Copy the full output into the `VPS_KNOWN_HOSTS` GitHub Actions secret. Do not
-use an unverified `ssh-keyscan` result: scanning discovers the presented key
-but does not prove the server's identity.
+Copy the full output into the `VPS_KNOWN_HOSTS` GitHub Actions secret.
+
+> [!WARNING]
+> Do not use an unverified `ssh-keyscan` result: scanning discovers the
+> presented key but does not prove the server's identity.
 
 ### Add the GitHub Actions secrets
 
@@ -982,8 +1165,10 @@ workflow**, choose the branch to deploy, and select **Run workflow** again.
 
 The manual run executes CI first. If CI succeeds, the deployment job connects
 to the VPS and runs the deployment. Open the deployment job in GitHub Actions
-to see whether the SSH connection and deployment succeeded. A manual run is a
-real production deployment, not a connection-only test.
+to see whether the SSH connection and deployment succeeded.
+
+> [!IMPORTANT]
+> A manual run is a real production deployment, not a connection-only test.
 
 The workflow also continues to deploy automatically after CI succeeds on a
 push to the configured `main` or `master` branch. Pull requests run CI without
@@ -1011,7 +1196,7 @@ Do not add a bypass for users who should follow this rule. Afterward, push work
 to a feature branch, open a pull request, and merge it only after `test` passes.
 The successful merge updates the production branch and starts deployment.
 
-The resulting key placement is:
+### Where every key lives
 
 | Connection | Private key | Public key |
 | ---------- | ----------- | ---------- |
@@ -1022,6 +1207,31 @@ The resulting key placement is:
 No deployment-kit repository token, second Actions checkout, or separate
 `VPS_DEPLOY_TOOL_PATH` is needed: CI and deployment both use the files committed
 inside the application repository.
+
+---
+
+# Reference
+
+## Configuration overrides
+
+| Variable               | Default                                       |
+| ---------------------- | --------------------------------------------- |
+| `APP_DIR`              | Current directory                             |
+| `APP_NAME`             | Detected from `mix.exs`                       |
+| `SERVICE_NAME`         | `APP_NAME.service`                            |
+| `ENV_FILE`             | `APP_DIR/.env.prod`                           |
+| `SERVICE_TEMPLATE`     | `.deploy/phoenix.service.tpl`                 |
+| `HEALTH_PATH`          | `/`                                           |
+| `HEALTH_CHECK_ENABLED` | `true`; set to `false` to skip verification   |
+| `PORT`                 | `4000`, unless set in `.env.prod`             |
+| `RELEASES_TO_KEEP`     | `5`; number of successful releases to retain  |
+| `RELEASES_DIR`         | User data directory outside the Git checkout  |
+
+For example:
+
+```bash
+HEALTH_PATH=/health SERVICE_NAME=my-app.service ./deploy.sh deploy
+```
 
 ## What a deployment does
 
@@ -1037,3 +1247,10 @@ Running `./deploy.sh deploy`:
 8. prints recent journal logs if the health check fails; and
 9. after a successful health check, saves the release and prunes snapshots
    beyond `RELEASES_TO_KEEP`.
+
+<div align="center">
+<br>
+
+[Back to top](#phoenix-systemd-deploy)
+
+</div>
