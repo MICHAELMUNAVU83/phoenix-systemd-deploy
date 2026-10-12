@@ -29,6 +29,21 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok() { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
+configure_runtime_path() {
+  local directory
+  for directory in "$HOME/.asdf/bin" "$HOME/.asdf/shims"; do
+    if [[ -d "$directory" && ":$PATH:" != *":$directory:"* ]]; then
+      PATH="$directory:$PATH"
+    fi
+  done
+  export PATH
+}
+
+require_mix() {
+  command -v mix >/dev/null 2>&1 ||
+    fail "mix was not found in PATH; install Elixir for this user or check ~/.asdf/shims/mix"
+}
+
 load_config() {
   APP_DIR="$(cd "$APP_DIR" && pwd)"
   [[ -f "$APP_DIR/mix.exs" ]] || fail "APP_DIR is not a Phoenix project: $APP_DIR"
@@ -85,6 +100,7 @@ install_service() {
 }
 
 build_release() {
+  require_mix
   info "Building $APP_NAME release"
   (
     cd "$APP_DIR"
@@ -211,6 +227,7 @@ deploy() {
 run_local() {
   local local_release_bin="$APP_DIR/_build/dev/rel/$APP_NAME/bin"
 
+  require_mix
   info "Building $APP_NAME development release using config/dev.exs"
   if ! (
     cd "$APP_DIR"
@@ -266,6 +283,7 @@ if [[ "${1:-}" == "commands" || "${1:-}" == "help" || "${1:-}" == "-h" || "${1:-
   exit 0
 fi
 
+configure_runtime_path
 load_config
 
 case "$COMMAND" in

@@ -348,6 +348,16 @@ The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
 application's database, and any asset-build tools used by the application.
 Deploy as a normal Linux user rather than root.
 
+If Erlang and Elixir are installed with asdf, install them for the same VPS
+user that performs deployments. The deployment script automatically adds
+`~/.asdf/bin` and `~/.asdf/shims` to `PATH`, including for non-interactive SSH
+sessions started by GitHub Actions. Verify the installation as that user:
+
+```bash
+~/.asdf/shims/elixir --version
+~/.asdf/shims/mix --version
+```
+
 ### Give the server access to a private GitHub repository
 
 Do this **before cloning** if the application repository is private. Skip this
@@ -743,6 +753,18 @@ From the application root, run the exact checks used by GitHub Actions:
 The script runs `mix deps.get`, formatting checks, compilation with warnings as
 errors, and the test suite.
 
+### Customize CI checks
+
+The included CI checks are a starting point. You can edit the `test` job in
+`.github/workflows/ci-deploy.yml` to add, remove, or replace checks for the
+application—for example, Credo, Dialyzer, security scanning, JavaScript tests,
+or asset builds.
+
+Keep the job identifier named `test` if the repository ruleset requires the
+`test` status check. If you rename it, update the required status check in the
+GitHub ruleset as well. The installer preserves customized workflow contents
+when it cannot safely apply a narrowly scoped workflow upgrade.
+
 ## Configure GitHub Actions deployment
 
 The installed workflow runs CI for pushes and pull requests. Deployment runs
@@ -921,6 +943,28 @@ real production deployment, not a connection-only test.
 The workflow also continues to deploy automatically after CI succeeds on a
 push to the configured `main` or `master` branch. Pull requests run CI without
 deploying.
+
+### Require CI before updating the production branch
+
+The workflow cannot reject a Git push by itself. Protect the production branch
+with a GitHub ruleset so changes must go through a pull request and pass CI
+before they can be merged.
+
+First, run the workflow at least once so GitHub knows about its `test` status
+check. Then open the application repository and go to **Settings → Rules →
+Rulesets → New ruleset → New branch ruleset**:
+
+1. Give the ruleset a name and set **Enforcement status** to **Active**.
+2. Under **Target branches**, include the default branch (`main` or `master`).
+3. Enable **Require a pull request before merging**.
+4. Enable **Require status checks to pass** and add the workflow's `test`
+   check as required.
+5. Optionally require the branch to be up to date before merging.
+6. Enable **Block force pushes**, then create the ruleset.
+
+Do not add a bypass for users who should follow this rule. Afterward, push work
+to a feature branch, open a pull request, and merge it only after `test` passes.
+The successful merge updates the production branch and starts deployment.
 
 The resulting key placement is:
 
