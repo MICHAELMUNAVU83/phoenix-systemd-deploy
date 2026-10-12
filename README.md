@@ -231,8 +231,130 @@ errors, and the test suite.
 The copied workflow runs CI for pushes and pull requests. Deployment runs only
 after CI succeeds on a push to `master`.
 
+### Create the GitHub Actions-to-VPS SSH key
+
+Create a dedicated key pair on your own computer. Do not add a passphrase:
+GitHub Actions cannot answer an interactive passphrase prompt.
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions deployment" -f ./github-actions-vps
+```
+
+This creates two files:
+
+- `github-actions-vps` is the **private key**. Copy its entire contents,
+  including the `BEGIN` and `END` lines, into the GitHub Actions secret
+  `VPS_SSH_PRIVATE_KEY`.
+- `github-actions-vps.pub` is the **public key**. Install it for the deployment
+  user on the VPS.
+
+From your computer, the simplest way to install the public key is:
+
+```bash
+ssh-copy-id -i ./github-actions-vps.pub -p 22 deploy@YOUR_VPS_HOST
+```
+
+If `ssh-copy-id` is unavailable, log in to the VPS and prepare its SSH
+directory:
+
+```bash
+install -d -m 700 ~/.ssh
+```
+
+Append the single line from `github-actions-vps.pub` to
+`~/.ssh/authorized_keys`, then correct the file permission:
+
+```bash
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Test the same key from your computer before adding it to GitHub:
+
+```bash
+ssh -i ./github-actions-vps -p 22 deploy@YOUR_VPS_HOST
+```
+
+After the GitHub secret has been saved and a deployment workflow has connected
+successfully, securely remove the local `github-actions-vps` private-key file.
+The public-key file may be retained. Never commit either file to the
+application repository.
+
+### Allow the VPS to fetch a private application repository
+
+This is a separate SSH connection and should use a separate key pair. Skip this
+step if the application repository is public or the server already has working
+GitHub credentials.
+
+On the VPS, logged in as the deployment user, generate a key with no
+passphrase:
+
+```bash
+install -d -m 700 ~/.ssh
+ssh-keygen -t ed25519 -C "VPS application deploy key" -f ~/.ssh/github_app_deploy
+```
+
+Display the public key:
+
+```bash
+cat ~/.ssh/github_app_deploy.pub
+```
+
+In the **application repository** on GitHub, add that public key under
+**Settings → Deploy keys → Add deploy key**. Read access is sufficient; do not
+enable write access. Keep `~/.ssh/github_app_deploy` private on the VPS.
+
+Configure SSH on the VPS to use this key for GitHub:
+
+```bash
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github_app_deploy
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+ssh -T git@github.com
+```
+
+GitHub normally reports successful authentication while noting that it does
+not provide shell access. Ensure the application checkout uses an SSH remote:
+
+```bash
+git -C ~/YOUR_APPLICATION_REPOSITORY_NAME remote set-url origin git@github.com:OWNER/REPOSITORY.git
+git -C ~/YOUR_APPLICATION_REPOSITORY_NAME fetch origin
+```
+
+### Record and verify the VPS host key
+
+GitHub Actions uses `VPS_KNOWN_HOSTS` to verify that it is connecting to the
+intended server. On a trusted computer, collect the server's public host keys
+(replace the port if SSH does not use port 22):
+
+```bash
+ssh-keyscan -p 22 YOUR_VPS_HOST > vps_known_hosts
+ssh-keygen -lf vps_known_hosts
+```
+
+Before trusting the output, compare the displayed fingerprints with the host
+key fingerprints shown directly on the VPS console:
+
+```bash
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub
+sudo ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub
+```
+
+Only matching key types need to be compared. Copy the full contents of
+`vps_known_hosts` into the `VPS_KNOWN_HOSTS` GitHub Actions secret. Do not use
+an unverified `ssh-keyscan` result: scanning discovers the presented key but
+does not prove the server's identity.
+
+### Add the GitHub Actions secrets
+
 Add these secrets under **Application repository → Settings → Secrets and
-variables → Actions**:
+variables → Actions**. Repository secrets work, or add them to the `production`
+environment used by the workflow:
 
 | Secret                | Description                                         |
 | --------------------- | --------------------------------------------------- |
@@ -242,6 +364,14 @@ variables → Actions**:
 | `VPS_APP_PATH`        | Application checkout, such as `/home/deploy/my_app` |
 | `VPS_SSH_PRIVATE_KEY` | Private SSH deployment key                          |
 | `VPS_KNOWN_HOSTS`     | Verified SSH host-key lines                         |
+
+The resulting key placement is:
+
+| Connection | Private key | Public key |
+| ---------- | ----------- | ---------- |
+| GitHub Actions → VPS | GitHub secret `VPS_SSH_PRIVATE_KEY` | VPS deployment user's `~/.ssh/authorized_keys` |
+| VPS → private GitHub repository | VPS `~/.ssh/github_app_deploy` | Application repository's GitHub deploy keys |
+| VPS identity verification | VPS `/etc/ssh/ssh_host_*_key` | GitHub secret `VPS_KNOWN_HOSTS` |
 
 No deployment-kit repository token, second Actions checkout, or separate
 `VPS_DEPLOY_TOOL_PATH` is needed: CI and deployment both use the files committed
