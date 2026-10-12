@@ -45,8 +45,30 @@ application root on the server, and **must never be committed**.
 
 ## 1. Add the kit to a Phoenix repository
 
-Download and extract the folder above into the Phoenix repository, or copy the
-files from this repository's `repo-template/` directory:
+The easiest method is to open Terminal, change into the Phoenix application,
+and run the installer directly from GitHub:
+
+```bash
+cd /path/to/my_app
+curl -fsSL https://raw.githubusercontent.com/MICHAELMUNAVU83/phoenix-systemd-deploy/main/install.sh | bash
+```
+
+The installer:
+
+1. checks that the current folder contains `mix.exs`;
+2. downloads and extracts all files, including hidden `.deploy` and `.github`
+   folders;
+3. refuses to replace deployment files that already exist;
+4. makes the shell scripts executable; and
+5. adds `/.env.prod` to `.gitignore` so production secrets cannot be committed
+   accidentally.
+
+For security, you can inspect
+[`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
+before running it.
+
+Alternatively, download and extract the ZIP into the Phoenix repository, or
+copy the files from this repository's `repo-template/` directory:
 
 ```bash
 APP_REPO=/path/to/my_app
