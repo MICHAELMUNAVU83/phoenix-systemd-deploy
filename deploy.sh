@@ -119,6 +119,36 @@ build_release() {
   ok "Release built"
 }
 
+development_port() {
+  (
+    cd "$APP_DIR"
+    MIX_ENV=dev mix run --no-start --no-compile -e '
+      app = Mix.Project.config()[:app]
+
+      port =
+        Application.get_all_env(app)
+        |> Enum.find_value(fn
+          {endpoint, config} when is_atom(endpoint) and is_list(config) ->
+            if String.ends_with?(Atom.to_string(endpoint), ".Endpoint") do
+              case Keyword.get(config, :http) do
+                http when is_list(http) -> Keyword.get(http, :port)
+                _ -> nil
+              end
+            end
+
+          _ ->
+            nil
+        end)
+
+      if is_integer(port) or is_binary(port) do
+        IO.write(port)
+      else
+        System.halt(1)
+      end
+    '
+  )
+}
+
 migrate() {
   [[ -x "$RELEASE_BIN/migrate" ]] || fail "Release migration command is missing"
   info "Running database migrations"
@@ -238,7 +268,7 @@ deploy() {
 }
 
 run_local() {
-  local local_release_bin="$APP_DIR/_build/dev/rel/$APP_NAME/bin"
+  local local_release_bin="$APP_DIR/_build/dev/rel/$APP_NAME/bin" local_port
 
   require_mix
   info "Building $APP_NAME development release using config/dev.exs"
@@ -257,9 +287,14 @@ run_local() {
   [[ -x "$local_release_bin/server" ]] || fail "Development release did not create $local_release_bin/server"
   [[ -x "$local_release_bin/migrate" ]] || fail "Development release migration command is missing"
 
+  local_port="$(development_port)" ||
+    fail "Could not read the Phoenix endpoint port from config/dev.exs"
+  [[ "$local_port" =~ ^[0-9]+$ ]] ||
+    fail "config/dev.exs returned an invalid Phoenix endpoint port: $local_port"
+
   info "Running migrations with the config/dev.exs database settings"
   "$local_release_bin/migrate"
-  info "Starting $APP_NAME development release locally on port $PORT"
+  info "Starting $APP_NAME development release locally on port $local_port"
   info "Press Ctrl-C to stop it"
   exec "$local_release_bin/server"
 }

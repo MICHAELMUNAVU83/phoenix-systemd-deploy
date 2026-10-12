@@ -348,8 +348,9 @@ the development database, and start it in the foreground:
 ./deploy.sh local
 ```
 
-Local mode listens on the port set in `config/dev.exs`, which is not always
-`4000`. Check which port your application uses:
+Local mode reads the Phoenix endpoint port from the evaluated `config/dev.exs`
+configuration and prints it before starting the release. You can also inspect
+the source configuration directly:
 
 ```bash
 grep -n "port:" config/dev.exs
@@ -510,6 +511,11 @@ sessions started by GitHub Actions. Verify the installation as that user:
 [GitHub deploy keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
 belong to one repository and cannot be reused for another. Therefore, every
 private application needs its own key filename and SSH alias.
+
+Run the shell commands in steps 1, 2, 4, and 5 **on the VPS**, while logged in
+as the normal Linux user that will own the application checkout and run its
+deployments. Do not run them on your local computer. Step 3 is completed in the
+application repository's GitHub settings.
 
 The repository has not been cloned yet, so its Phoenix app name cannot be
 detected automatically. In every command below, replace `YOUR_APP_NAME` with a
