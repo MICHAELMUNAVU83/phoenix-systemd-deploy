@@ -358,7 +358,17 @@ the development database, and start it in the foreground:
 ./deploy.sh local
 ```
 
-In another terminal, test it:
+Local mode listens on the port set in `config/dev.exs`, which is not always
+`4000`. Check which port your application uses:
+
+```bash
+grep -n "port:" config/dev.exs
+```
+
+The endpoint also logs its address when the release starts, in a line such as
+`Running MyAppWeb.Endpoint ... at 127.0.0.1:4000 (http)`.
+
+In another terminal, test it, replacing `4000` with your application's port:
 
 ```bash
 curl --fail http://localhost:4000/
