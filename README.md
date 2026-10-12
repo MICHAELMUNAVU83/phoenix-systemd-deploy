@@ -745,53 +745,43 @@ The installed workflow runs CI for pushes and pull requests. Deployment runs
 only after CI succeeds on a push to the `main` or `master` branch selected by
 the installer.
 
-### Create the GitHub Actions-to-VPS SSH key
+### One-time deployment setup
 
-Create a dedicated key pair on your own computer. Do not add a passphrase:
-GitHub Actions cannot answer an interactive passphrase prompt.
+Do this once for each GitHub repository. You do not need to repeat it for
+future deployments.
+
+On your computer, preferably outside the application directory, create a
+deployment key:
 
 ```bash
 ssh-keygen -t ed25519 -C "github-actions deployment" -f ./github-actions-vps
 ```
 
-This creates two files:
-
-- `github-actions-vps` is the **private key**. Copy its entire contents,
-  including the `BEGIN` and `END` lines, into the GitHub Actions secret
-  `VPS_SSH_PRIVATE_KEY`.
-- `github-actions-vps.pub` is the **public key**. Install it for the deployment
-  user on the VPS.
-
-From your computer, the simplest way to install the public key is:
+Press Enter when asked for a passphrase so the key has no passphrase. Install
+the public key on the VPS:
 
 ```bash
 ssh-copy-id -i ./github-actions-vps.pub -p 22 deploy@YOUR_VPS_HOST
 ```
 
-If `ssh-copy-id` is unavailable, log in to the VPS and prepare its SSH
-directory:
-
-```bash
-install -d -m 700 ~/.ssh
-```
-
-Append the single line from `github-actions-vps.pub` to
-`~/.ssh/authorized_keys`, then correct the file permission:
-
-```bash
-chmod 600 ~/.ssh/authorized_keys
-```
-
-Test the same key from your computer before adding it to GitHub:
+Test the connection:
 
 ```bash
 ssh -i ./github-actions-vps -p 22 deploy@YOUR_VPS_HOST
 ```
 
-After the GitHub secret has been saved and a deployment workflow has connected
-successfully, securely remove the local `github-actions-vps` private-key file.
-The public-key file may be retained. Never commit either file to the
-application repository.
+Then open the GitHub repository and go to **Settings → Secrets and variables →
+Actions → New repository secret**. Create a secret named
+`VPS_SSH_PRIVATE_KEY` and paste the complete contents of the
+`github-actions-vps` file, including its `BEGIN` and `END` lines.
+
+Once deployment works, securely delete the local `github-actions-vps`
+private-key file. You may keep `github-actions-vps.pub`. Never commit either
+key file to Git.
+
+If several projects deploy to the same VPS, use a separate key for each
+repository. This lets you remove one project's access without affecting the
+others.
 
 ### Record and verify the VPS host key
 
