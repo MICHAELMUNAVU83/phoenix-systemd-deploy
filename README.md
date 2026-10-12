@@ -422,17 +422,6 @@ git clone git@github-YOUR_APP_NAME:OWNER/REPOSITORY.git
 cd YOUR_APPLICATION_REPOSITORY_NAME
 ```
 
-After cloning, confirm that the committed release support files are present:
-
-```text
-rel/overlays/bin/server
-rel/overlays/bin/migrate
-```
-
-If they are missing, stop and run `mix phx.gen.release` locally as described in
-step 1, commit its output, and then pull the commit onto the server. Do not make
-uncommitted application changes directly on the production server.
-
 ## 3. Create the production environment
 
 First, confirm that the `.gitignore` committed in step 1 contains this line:
