@@ -33,7 +33,11 @@ load_config() {
 
   SERVICE_NAME="${SERVICE_NAME:-${APP_NAME}.service}"
   PORT="${PORT:-4000}"
-  RELEASE_BIN="$APP_DIR/_build/prod/rel/$APP_NAME/bin"
+  RELEASES_TO_KEEP="${RELEASES_TO_KEEP:-5}"
+  [[ "$RELEASES_TO_KEEP" =~ ^[1-9][0-9]*$ ]] || fail "RELEASES_TO_KEEP must be a positive whole number"
+  RELEASE_ROOT="$APP_DIR/_build/prod/rel/$APP_NAME"
+  RELEASE_BIN="$RELEASE_ROOT/bin"
+  RELEASES_DIR="${RELEASES_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/phoenix-systemd-deploy/$APP_NAME/releases}"
   USER_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   UNIT_FILE="$USER_UNIT_DIR/$SERVICE_NAME"
 }
@@ -110,7 +114,76 @@ health_check() {
   done
 
   journalctl --user -u "$SERVICE_NAME" -n 100 --no-pager || true
-  fail "Health check failed"
+  return 1
+}
+
+list_releases() {
+  local number=0 release_path
+  [[ -d "$RELEASES_DIR" ]] || { info "No saved releases"; return 0; }
+
+  printf 'NUMBER  RELEASE\n'
+  while IFS= read -r release_path; do
+    number=$((number + 1))
+    printf '%-7s %s\n' "$number" "$(basename "$release_path")"
+  done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -print | sort -r)
+
+  [[ "$number" -gt 0 ]] || info "No saved releases"
+}
+
+save_release() {
+  local release_id commit release_path number=0 old_path
+  [[ -d "$RELEASE_ROOT" ]] || fail "Cannot save missing release: $RELEASE_ROOT"
+
+  commit="$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+  release_id="$(date -u +%Y%m%dT%H%M%SZ)-$commit"
+  release_path="$RELEASES_DIR/$release_id"
+  [[ ! -e "$release_path" ]] || release_path="${release_path}-$$"
+
+  mkdir -p "$RELEASES_DIR"
+  cp -a "$RELEASE_ROOT" "$release_path"
+  ok "Saved release $(basename "$release_path")"
+
+  while IFS= read -r old_path; do
+    number=$((number + 1))
+    if [[ "$number" -gt "$RELEASES_TO_KEEP" ]]; then
+      [[ "$old_path" == "$RELEASES_DIR/"* ]] || fail "Refusing to prune unexpected path: $old_path"
+      rm -rf -- "$old_path"
+    fi
+  done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -print | sort -r)
+}
+
+rollback_release() {
+  local selection="$1" selected_path active_backup staged_release number=0 release_path
+  [[ "$selection" =~ ^[1-9][0-9]*$ ]] || fail "Choose a release number shown by: ./deploy.sh releases"
+  [[ -d "$RELEASE_ROOT" ]] || fail "Active release is missing: $RELEASE_ROOT"
+
+  while IFS= read -r release_path; do
+    number=$((number + 1))
+    if [[ "$number" == "$selection" ]]; then
+      selected_path="$release_path"
+      break
+    fi
+  done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort -r)
+  [[ -n "${selected_path:-}" ]] || fail "Release number $selection does not exist"
+
+  require_production_env
+  install_service
+  staged_release="${RELEASE_ROOT}.rollback.$$"
+  active_backup="${RELEASE_ROOT}.before-rollback.$$"
+  cp -a "$selected_path" "$staged_release"
+  mv "$RELEASE_ROOT" "$active_backup"
+  mv "$staged_release" "$RELEASE_ROOT"
+
+  if restart_service && health_check; then
+    rm -rf -- "$active_backup"
+    ok "Rolled back to $(basename "$selected_path")"
+  else
+    mv "$RELEASE_ROOT" "$staged_release"
+    mv "$active_backup" "$RELEASE_ROOT"
+    restart_service || true
+    rm -rf -- "$staged_release"
+    fail "Rollback health check failed; restored the previous active release"
+  fi
 }
 
 deploy() {
@@ -119,7 +192,8 @@ deploy() {
   build_release
   migrate
   restart_service
-  health_check
+  health_check || fail "Health check failed"
+  save_release
 }
 
 run_local() {
@@ -150,7 +224,7 @@ run_local() {
 
 usage() {
   cat <<'EOF'
-Usage: ./deploy.sh [local|up|deploy|status]
+Usage: ./deploy.sh [local|up|deploy|status|releases|rollback NUMBER]
 
 The default command is deploy. Set APP_DIR when the Phoenix application is not
 the current directory, for example:
@@ -176,8 +250,10 @@ case "$COMMAND" in
     require_production_env
     install_service
     restart_service
-    health_check
+    health_check || fail "Health check failed"
     ;;
   status) systemctl --user status "$SERVICE_NAME" ;;
+  releases) list_releases ;;
+  rollback) rollback_release "${2:-}" ;;
   *) usage; exit 1 ;;
 esac

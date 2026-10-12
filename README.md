@@ -54,12 +54,30 @@ The installer:
 
 1. checks that the current folder contains `mix.exs`;
 2. installs all files, including hidden `.deploy` and `.github` folders;
-3. refuses to replace deployment files that already exist;
+3. when rerun, updates only `deploy.sh` and `.deploy/ci.sh`;
 4. makes the shell scripts executable;
 5. detects whether the repository uses `main` or `master` and configures the
    deployment workflow accordingly; and
 6. adds `/.env.prod` to `.gitignore` so production secrets cannot be committed
    accidentally.
+
+You can safely run the same `curl` command again when a newer deployment kit
+is available. Existing installations update these shared scripts:
+
+```text
+deploy.sh
+.deploy/ci.sh
+```
+
+The updater preserves `.deploy/.env.prod.example`,
+`.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, `rename.md`,
+and all application files because those may have app-specific customizations.
+Review every script update before committing it:
+
+```bash
+git diff -- deploy.sh .deploy/ci.sh
+./.deploy/ci.sh
+```
 
 For security, you can inspect
 [`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
@@ -87,6 +105,33 @@ mix phx.gen.release
 Run this locally—not on the production server. Review the generated files and
 commit them with the application. You normally run this generator only once;
 future deployments reuse those committed files.
+
+If the new `rel/` folder does not appear in Source Control or
+`git status --short`, check whether Git is ignoring it:
+
+```bash
+git check-ignore -v rel/overlays/bin/server
+git check-ignore -v rel/overlays/bin/migrate
+```
+
+If either command prints a rule, the first column identifies the ignore source.
+Remove the `rel` or `/rel/` rule from the application's `.gitignore` when it is
+no longer needed. If the rule comes from a global ignore file, or you
+intentionally want to keep that rule, explicitly stage the reviewed generated
+folder once:
+
+```bash
+git add -f rel
+```
+
+Using `-f` is appropriate here only for the generated `rel/` support files that
+must ship with the application. Never use it for `.env.prod` or another secret.
+Confirm that the files are now staged:
+
+```bash
+git status --short rel
+git diff --cached -- rel
+```
 
 A sandboxed coding assistant may ask permission because Mix needs a local
 filesystem lock or writes tools under your user account. That permission is for
@@ -127,7 +172,8 @@ under `lib/`:
 
 ```bash
 git status --short
-git add rel lib/YOUR_APP/release.ex
+git add lib/YOUR_APP/release.ex
+git add rel || git add -f rel
 ```
 
 Then commit everything:
@@ -433,6 +479,7 @@ PHX_HOST="example.com"
 PORT="4000"
 POOL_SIZE="10"
 FORCE_SSL="true"
+RELEASES_TO_KEEP="5"
 ```
 
 Replace `DATABASE_NAME` with the exact database name you created and want this
@@ -540,11 +587,43 @@ Or use the simpler repo-local commands from the application root:
 ./deploy.sh up
 ./deploy.sh deploy
 ./deploy.sh status
+./deploy.sh releases
 ```
 
 `up` starts or restarts the existing release, `deploy` builds the release, runs
 migrations, and restarts it, and `status` displays its systemd status. Use
 `journalctl --user -u my_app.service -f` when you need live logs.
+
+Every successful deployment saves a numbered release snapshot. The newest
+snapshot is number 1. The value of `RELEASES_TO_KEEP` in `.env.prod` controls
+how many are retained; it defaults to 5. List them with:
+
+```bash
+./deploy.sh releases
+```
+
+Example output:
+
+```text
+NUMBER  RELEASE
+1       20261012T101500Z-a1b2c3d
+2       20261011T164200Z-e4f5a6b
+```
+
+To restore the release shown as number 2:
+
+```bash
+./deploy.sh rollback 2
+```
+
+The rollback replaces the active application release, restarts the service,
+and performs the health check. If that check fails, the script restores the
+release that was active before the rollback.
+
+> **Database warning:** rollback changes application code only. It does not
+> reverse database migrations. Before deploying a migration, make it compatible
+> with both the old and new application versions, or prepare a separately
+> reviewed database rollback procedure.
 
 On your local development machine, run `./.deploy/ci.sh` for formatting,
 compilation, and tests. Use `./deploy.sh local` when you also want to smoke-test
@@ -576,6 +655,8 @@ script changes arrive with the same pull as application changes.
 | `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl`                    |
 | `HEALTH_PATH`      | `/`                                              |
 | `PORT`             | `4000`, unless set in `.env.prod`                |
+| `RELEASES_TO_KEEP` | `5`; number of successful releases to retain     |
+| `RELEASES_DIR`     | User data directory outside the Git checkout     |
 
 For example:
 
@@ -711,4 +792,6 @@ Running `./deploy.sh deploy`:
 5. runs database migrations;
 6. enables and restarts the service;
 7. performs an HTTP health check;
-8. prints recent journal logs if the health check fails.
+8. prints recent journal logs if the health check fails; and
+9. after a successful health check, saves the release and prunes snapshots
+   beyond `RELEASES_TO_KEEP`.

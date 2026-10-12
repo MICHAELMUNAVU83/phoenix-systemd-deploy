@@ -16,16 +16,23 @@ command -v unzip >/dev/null 2>&1 || fail "unzip is required"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 [[ -f "$TARGET_DIR/mix.exs" ]] || fail "Run this command from a Phoenix project (mix.exs was not found)."
 
-for path in \
-  deploy.sh \
-  rename.md \
-  README-FIRST.md \
-  .deploy/.env.prod.example \
-  .deploy/ci.sh \
-  .deploy/phoenix.service.tpl \
-  .github/workflows/ci-deploy.yml; do
-  [[ ! -e "$TARGET_DIR/$path" ]] || fail "$path already exists; installation stopped without overwriting it."
-done
+INSTALL_MODE="fresh"
+if [[ -e "$TARGET_DIR/deploy.sh" && -e "$TARGET_DIR/.deploy/ci.sh" ]]; then
+  INSTALL_MODE="update"
+elif [[ -e "$TARGET_DIR/deploy.sh" || -e "$TARGET_DIR/.deploy/ci.sh" ]]; then
+  fail "Found a partial or conflicting installation; expected both deploy.sh and .deploy/ci.sh."
+fi
+
+if [[ "$INSTALL_MODE" == "fresh" ]]; then
+  for path in \
+    rename.md \
+    README-FIRST.md \
+    .deploy/.env.prod.example \
+    .deploy/phoenix.service.tpl \
+    .github/workflows/ci-deploy.yml; do
+    [[ ! -e "$TARGET_DIR/$path" ]] || fail "$path already exists; installation stopped without overwriting it."
+  done
+fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -34,7 +41,17 @@ printf 'Downloading Phoenix systemd deployment kit...\n'
 curl --fail --silent --show-error --location "$DOWNLOAD_URL" \
   --output "$TEMP_DIR/phoenix-systemd-deploy.zip"
 
-unzip -q "$TEMP_DIR/phoenix-systemd-deploy.zip" -d "$TARGET_DIR"
+mkdir -p "$TEMP_DIR/kit"
+unzip -q "$TEMP_DIR/phoenix-systemd-deploy.zip" -d "$TEMP_DIR/kit"
+
+if [[ "$INSTALL_MODE" == "update" ]]; then
+  mkdir -p "$TARGET_DIR/.deploy"
+  cp "$TEMP_DIR/kit/deploy.sh" "$TARGET_DIR/deploy.sh"
+  cp "$TEMP_DIR/kit/.deploy/ci.sh" "$TARGET_DIR/.deploy/ci.sh"
+  printf 'Updated deploy.sh and .deploy/ci.sh; preserved customized deployment files.\n'
+else
+  cp -R "$TEMP_DIR/kit/." "$TARGET_DIR/"
+fi
 chmod +x "$TARGET_DIR/deploy.sh" "$TARGET_DIR/.deploy/ci.sh"
 
 DEPLOY_BRANCH=""
@@ -54,12 +71,12 @@ if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fi
 fi
 
-if [[ -n "$DEPLOY_BRANCH" ]]; then
+if [[ "$INSTALL_MODE" == "fresh" && -n "$DEPLOY_BRANCH" ]]; then
   sed -i.bak "s|refs/heads/master|refs/heads/$DEPLOY_BRANCH|g" \
     "$TARGET_DIR/.github/workflows/ci-deploy.yml"
   rm "$TARGET_DIR/.github/workflows/ci-deploy.yml.bak"
   printf 'Deployment branch set to %s.\n' "$DEPLOY_BRANCH"
-else
+elif [[ "$INSTALL_MODE" == "fresh" ]]; then
   printf '\033[1;33mWarning:\033[0m Could not detect main or master; the workflow currently deploys master.\n'
   printf 'Check .github/workflows/ci-deploy.yml before committing.\n'
 fi
@@ -74,8 +91,16 @@ for ignore_rule in '.DS_Store' '*.bak' '/priv/static/cache_manifest.json'; do
   fi
 done
 
-printf '\033[1;32mInstallation complete.\033[0m\n'
+if [[ "$INSTALL_MODE" == "update" ]]; then
+  printf '\033[1;32mScript update complete.\033[0m\n'
+else
+  printf '\033[1;32mInstallation complete.\033[0m\n'
+fi
 if [[ ! -f "$TARGET_DIR/rel/overlays/bin/server" || ! -f "$TARGET_DIR/rel/overlays/bin/migrate" ]]; then
   printf '\033[1;33mRelease setup needed:\033[0m run mix phx.gen.release locally, then commit its generated files.\n'
 fi
-printf 'Next: open %s/rename.md and follow its instructions.\n' "$TARGET_DIR"
+if [[ "$INSTALL_MODE" == "fresh" ]]; then
+  printf 'Next: open %s/rename.md and follow its instructions.\n' "$TARGET_DIR"
+else
+  printf 'Review the updated scripts with: git diff -- deploy.sh .deploy/ci.sh\n'
+fi
