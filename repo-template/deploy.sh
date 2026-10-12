@@ -6,6 +6,9 @@
 #   ./deploy.sh deploy            Build, migrate, restart, check, and save a release.
 #   ./deploy.sh up                Restart the existing production release.
 #   ./deploy.sh status            Show the systemd service status.
+#   ./deploy.sh console           Open a remote IEx shell on the running release.
+#   ./deploy.sh logs              Browse all service logs with a pager.
+#   ./deploy.sh logs-follow       Follow new service logs continuously.
 #   ./deploy.sh releases          List saved production releases by number.
 #   ./deploy.sh rollback NUMBER   Restore a saved release by its listed number.
 
@@ -233,7 +236,7 @@ run_local() {
 
 usage() {
   cat <<'EOF'
-Usage: ./deploy.sh [commands|local|up|deploy|status|releases|rollback NUMBER]
+Usage: ./deploy.sh COMMAND
 
 Commands:
   commands          List these commands without running a deployment.
@@ -244,6 +247,10 @@ Commands:
   up                Install/update the service definition and restart the
                     existing production release without rebuilding it.
   status            Show the systemd user-service status.
+  console           Open a remote IEx shell on the running production release.
+  logs              Browse all service logs; use arrows/Page Up/Page Down and
+                    press q to exit.
+  logs-follow       Follow new service logs; press Ctrl-C to stop.
   releases          List saved production releases. Number 1 is the newest.
   rollback NUMBER   Restore a release shown by the releases command.
 
@@ -271,6 +278,12 @@ case "$COMMAND" in
     health_check || fail "Health check failed"
     ;;
   status) systemctl --user status "$SERVICE_NAME" ;;
+  console)
+    [[ -x "$RELEASE_BIN/$APP_NAME" ]] || fail "Release command is missing: $RELEASE_BIN/$APP_NAME"
+    exec "$RELEASE_BIN/$APP_NAME" remote
+    ;;
+  logs) journalctl --user -u "$SERVICE_NAME" ;;
+  logs-follow) journalctl --user -u "$SERVICE_NAME" -f ;;
   releases) list_releases ;;
   rollback) rollback_release "${2:-}" ;;
   *) usage; exit 1 ;;

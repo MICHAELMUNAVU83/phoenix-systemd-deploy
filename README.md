@@ -83,6 +83,15 @@ For security, you can inspect
 [`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
 before running it.
 
+After installation, start by viewing every available deployment command:
+
+```bash
+./deploy.sh commands
+```
+
+This only displays help; it does not build, migrate, restart, or otherwise
+change the application.
+
 Open `rename.md` in the target repository and give its prompt to your AI coding
 assistant. Review the resulting changes before committing them.
 
@@ -594,6 +603,9 @@ Or use the simpler repo-local commands from the application root:
 ./deploy.sh up
 ./deploy.sh deploy
 ./deploy.sh status
+./deploy.sh console
+./deploy.sh logs
+./deploy.sh logs-follow
 ./deploy.sh releases
 ```
 
@@ -601,8 +613,16 @@ Run `./deploy.sh commands` at any time to see every supported command and what
 it does without starting a deployment.
 
 `up` starts or restarts the existing release, `deploy` builds the release, runs
-migrations, and restarts it, and `status` displays its systemd status. Use
-`journalctl --user -u my_app.service -f` when you need live logs.
+migrations, and restarts it, and `status` displays its systemd status.
+
+Use `./deploy.sh console` to attach a remote IEx shell to the running production
+release. Exit IEx normally when finished; do not stop the application from the
+remote shell.
+
+Use `./deploy.sh logs` to open the complete service journal in a scrollable
+pager. Navigate with the arrow keys, **Page Up**, or **Page Down**, search with
+`/text`, and press `q` to exit. Use `./deploy.sh logs-follow` to stream new log
+entries and press **Ctrl-C** to stop following them.
 
 Every successful deployment saves a numbered release snapshot. The newest
 snapshot is number 1. The value of `RELEASES_TO_KEEP` in `.env.prod` controls
