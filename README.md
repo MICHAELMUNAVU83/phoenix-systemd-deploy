@@ -152,6 +152,29 @@ Make sure the development database configured by `config/dev.exs` exists:
 mix ecto.create
 ```
 
+Before running local mode, view its built-in help:
+
+```bash
+./deploy.sh --help
+```
+
+You can also inspect the exact `run_local` function without executing it:
+
+```bash
+sed -n '/^run_local()/,/^}/p' deploy.sh
+```
+
+`./deploy.sh local` is not a dry run. It:
+
+1. uses `MIX_ENV=dev` and the database configuration in `config/dev.exs`;
+2. fetches dependencies and compiles the application;
+3. builds and digests the static assets;
+4. assembles a development release under `_build/dev/rel/`;
+5. cleans generated digest copies from the source `priv/static/` directory;
+6. runs the generated release migration command against the development
+   database; and
+7. starts the release in the foreground until you press **Ctrl-C**.
+
 Then build a development release, run its release migration command against
 the development database, and start it in the foreground:
 
@@ -231,6 +254,35 @@ If the application stores user-generated files under `priv/static/uploads/`,
 add `/priv/static/uploads/` to `.gitignore` too. Do not add that rule if the
 folder contains deliberate source assets that should ship with the application.
 
+## Check everything before pushing
+
+Run the same CI checks used by GitHub Actions from the application root:
+
+```bash
+./.deploy/ci.sh
+```
+
+Do not push if this command fails. Fix the reported formatting, compilation, or
+test error, then run it again until it ends with `CI checks passed`.
+
+Confirm that the production secret file is ignored:
+
+```bash
+git check-ignore -v .env.prod
+```
+
+Finally, inspect everything that will be committed:
+
+```bash
+git status --short
+git diff --check
+git diff --cached
+```
+
+Make sure `.env.prod`, `.DS_Store`, backup files, uploads, and generated digest
+files are not staged. Push only after the CI script passes and the staged diff
+contains the intended source, release, and deployment files.
+
 ## 2. Prepare the server checkout
 
 The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
@@ -243,46 +295,68 @@ Do this **before cloning** if the application repository is private. Skip this
 subsection if the repository is public or the server already has working
 GitHub credentials.
 
-Log in to the VPS as the deployment user and create a dedicated SSH key. When
-`ssh-keygen` asks for a passphrase, press Enter twice to leave it empty so
-automated deployments can fetch without prompting:
+[GitHub deploy keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
+belong to one repository and cannot be reused for another. Therefore, every
+private application needs its own key filename and SSH alias.
+
+The repository has not been cloned yet, so its Phoenix app name cannot be
+detected automatically. In every command below, replace `YOUR_APP_NAME` with a
+short, unique name such as `kabeberi`. Use the same name consistently for that
+application. A second application on the VPS must use a different name.
+
+First, check which deploy keys already exist:
 
 ```bash
 install -d -m 700 ~/.ssh
-ssh-keygen -t ed25519 -C "VPS application deploy key" -f ~/.ssh/github_app_deploy
+find ~/.ssh -maxdepth 1 -type f -name 'github_*_deploy*' -print
 ```
 
-This creates two files:
-
-- `~/.ssh/github_app_deploy` is the private key. It stays on the VPS and must
-  never be copied to GitHub or committed.
-- `~/.ssh/github_app_deploy.pub` is the public key. Display it with:
+If a key for this same application already exists, reuse it. Otherwise, create
+it. When asked for a passphrase, press Enter twice so automated deployments can
+fetch without prompting:
 
 ```bash
-cat ~/.ssh/github_app_deploy.pub
+if [ -f ~/.ssh/github_YOUR_APP_NAME_deploy ] && [ -f ~/.ssh/github_YOUR_APP_NAME_deploy.pub ]; then
+  echo "Key already exists; reusing it"
+else
+  ssh-keygen -t ed25519 -C "YOUR_APP_NAME VPS deploy key" -f ~/.ssh/github_YOUR_APP_NAME_deploy
+fi
+```
+
+This creates two app-specific files:
+
+- `~/.ssh/github_YOUR_APP_NAME_deploy` is the private key. It stays on the VPS and
+  must never be copied to GitHub or committed.
+- `~/.ssh/github_YOUR_APP_NAME_deploy.pub` is the public key. Display it with:
+
+```bash
+cat ~/.ssh/github_YOUR_APP_NAME_deploy.pub
 ```
 
 Copy the complete output. In the **application repository** on GitHub, open
 **Settings → Deploy keys → Add deploy key**, paste the public key, and save it.
 Read access is sufficient; do not enable write access.
 
-Tell SSH to use that private key when the VPS connects to GitHub:
+Give this repository its own SSH alias. This command checks before adding it,
+so rerunning it does not duplicate the configuration:
 
 ```bash
-cat >> ~/.ssh/config <<'EOF'
-Host github.com
+if ! grep -qxF "Host github-YOUR_APP_NAME" ~/.ssh/config 2>/dev/null; then
+  cat >> ~/.ssh/config <<'EOF'
+Host github-YOUR_APP_NAME
   HostName github.com
   User git
-  IdentityFile ~/.ssh/github_app_deploy
+  IdentityFile ~/.ssh/github_YOUR_APP_NAME_deploy
   IdentitiesOnly yes
 EOF
+fi
 chmod 600 ~/.ssh/config
 ```
 
 Test the connection:
 
 ```bash
-ssh -T git@github.com
+ssh -T git@github-YOUR_APP_NAME
 ```
 
 The first connection may ask whether you trust GitHub's host key. Verify the
@@ -293,12 +367,12 @@ and that GitHub does not provide shell access.
 
 ### Clone the application
 
-Use the repository's **SSH** URL, which begins with `git@github.com:`. A
-separate deployment-kit checkout is not required:
+Use the app-specific SSH alias in the clone URL. Replace `OWNER` and
+`REPOSITORY`; a separate deployment-kit checkout is not required:
 
 ```bash
 cd ~
-git clone git@github.com:OWNER/REPOSITORY.git
+git clone git@github-YOUR_APP_NAME:OWNER/REPOSITORY.git
 cd YOUR_APPLICATION_REPOSITORY_NAME
 ```
 
@@ -619,7 +693,7 @@ The resulting key placement is:
 | Connection | Private key | Public key |
 | ---------- | ----------- | ---------- |
 | GitHub Actions → VPS | GitHub secret `VPS_SSH_PRIVATE_KEY` | VPS deployment user's `~/.ssh/authorized_keys` |
-| VPS → private GitHub repository | VPS `~/.ssh/github_app_deploy` | Application repository's GitHub deploy keys |
+| VPS → private GitHub repository | VPS `~/.ssh/github_YOUR_APP_NAME_deploy` | Application repository's GitHub deploy keys |
 | VPS identity verification | VPS `/etc/ssh/ssh_host_*_key` | GitHub secret `VPS_KNOWN_HOSTS` |
 
 No deployment-kit repository token, second Actions checkout, or separate
