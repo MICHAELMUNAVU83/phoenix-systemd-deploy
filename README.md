@@ -191,6 +191,26 @@ Apply the same change to any other configured regex named in the error, then
 run `./deploy.sh local` again. The `E` modifier makes the compiled regex safe
 for Mix to export into a release configuration.
 
+To update the `priv/static` regex automatically from the application root, run:
+
+```bash
+perl -pi.bak -e 'if (/priv.*static/ && /~r/ && !m{[/"]E\s*,?\s*$}) { s{([/"])(\s*,?\s*)$}{$1E$2} }' config/dev.exs
+```
+
+The command creates `config/dev.exs.bak` and does not add a second `E` if it is
+already present. Review the change:
+
+```bash
+git diff -- config/dev.exs
+```
+
+If the diff is correct, remove the backup and retry the local release:
+
+```bash
+rm config/dev.exs.bak
+./deploy.sh local
+```
+
 ## 2. Prepare the server checkout
 
 The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
