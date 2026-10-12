@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# Commands:
+#   ./deploy.sh commands          List all commands and their purpose.
+#   ./deploy.sh local             Build and run a release using config/dev.exs.
+#   ./deploy.sh deploy            Build, migrate, restart, check, and save a release.
+#   ./deploy.sh up                Restart the existing production release.
+#   ./deploy.sh status            Show the systemd service status.
+#   ./deploy.sh releases          List saved production releases by number.
+#   ./deploy.sh rollback NUMBER   Restore a saved release by its listed number.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -224,19 +233,28 @@ run_local() {
 
 usage() {
   cat <<'EOF'
-Usage: ./deploy.sh [local|up|deploy|status|releases|rollback NUMBER]
+Usage: ./deploy.sh [commands|local|up|deploy|status|releases|rollback NUMBER]
+
+Commands:
+  commands          List these commands without running a deployment.
+  local             Build, migrate, and run a development release using
+                    config/dev.exs. Does not use systemd.
+  deploy            Build the production release, run migrations, restart the
+                    service, check health, and save a release snapshot.
+  up                Install/update the service definition and restart the
+                    existing production release without rebuilding it.
+  status            Show the systemd user-service status.
+  releases          List saved production releases. Number 1 is the newest.
+  rollback NUMBER   Restore a release shown by the releases command.
 
 The default command is deploy. Set APP_DIR when the Phoenix application is not
 the current directory, for example:
 
   APP_DIR=/srv/my_app ./deploy.sh deploy
-
-Use local to build, migrate, and run a development release with config/dev.exs
-in the foreground, without installing a systemd service.
 EOF
 }
 
-if [[ "${1:-}" == "help" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+if [[ "${1:-}" == "commands" || "${1:-}" == "help" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi

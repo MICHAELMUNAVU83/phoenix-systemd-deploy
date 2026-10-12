@@ -584,11 +584,15 @@ journalctl --user -u my_app.service -f
 Or use the simpler repo-local commands from the application root:
 
 ```bash
+./deploy.sh commands
 ./deploy.sh up
 ./deploy.sh deploy
 ./deploy.sh status
 ./deploy.sh releases
 ```
+
+Run `./deploy.sh commands` at any time to see every supported command and what
+it does without starting a deployment.
 
 `up` starts or restarts the existing release, `deploy` builds the release, runs
 migrations, and restarts it, and `status` displays its systemd status. Use
