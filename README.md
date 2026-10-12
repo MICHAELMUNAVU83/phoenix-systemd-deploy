@@ -484,6 +484,20 @@ S3_BUCKET="my-production-bucket"
 AWS_REGION="eu-west-1"
 ```
 
+After editing `.env.prod`, check its shell syntax and list the configured
+variable names without printing their secret values:
+
+```bash
+bash -n .env.prod
+sed -nE 's/^([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' .env.prod
+```
+
+Then display the deployment commands available in this repository:
+
+```bash
+./deploy.sh commands
+```
+
 ## 4. Verify the production database
 
 This deployment process assumes the production database and its user already
@@ -549,16 +563,19 @@ journalctl --user -u YOUR_APP_NAME.service -n 100 --no-pager
 Fix the reported problem and run `./deploy.sh deploy` again. The command is
 intended to be safely rerun after configuration or application changes.
 
-Enable lingering once so the user service starts after a reboot without an
-active SSH session:
+Enable lingering once so the deployment user's service starts after a reboot
+without an active SSH session. These are system-level commands and can be run
+from any directory on the VPS:
 
 ```bash
-sudo loginctl enable-linger deploy
-loginctl show-user deploy --property=Linger
+sudo loginctl enable-linger "$(whoami)"
+loginctl show-user "$(whoami)" --property=Linger
 ```
 
-The expected output is `Linger=yes`. This is normally the only setup command
-that requires root privileges.
+The expected output is `Linger=yes`. Run these while logged in as the Linux user
+that owns and deploys the application; `$(whoami)` supplies that username
+automatically. This is normally the only setup command that requires root
+privileges.
 
 ## 6. Operate the service
 
