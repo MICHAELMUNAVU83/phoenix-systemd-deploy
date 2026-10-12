@@ -1,24 +1,16 @@
 # Phoenix systemd deploy
 
-A small, repo-scoped deployment kit for Phoenix applications on Linux. Copy it
-into each Phoenix repository and commit it with the application. Each repository
-then owns its deployment scripts, systemd template, and CI workflow, so changes
-can be reviewed and released together with the code they affect.
+A small, repo-scoped deployment kit for Phoenix applications on Linux. Install
+it into each Phoenix repository and commit it with the application. Each
+repository then owns its deployment scripts, systemd template, and CI workflow,
+so changes can be reviewed and released together with the code they affect.
 
 The kit builds a Mix release, runs database migrations, installs a user-level
 systemd service, restarts the application, and checks that it responds over
 HTTP. The same CI script is used locally and in GitHub Actions.
 
-[⬇ **Download the repo-scoped folder (.zip)**](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/raw/main/download/phoenix-systemd-deploy.zip)
-
-The download includes `rename.md`, which contains a ready-to-use prompt for an
-AI coding assistant to customize the deployment for the target repository.
-
-> **macOS users:** `.deploy` and `.github` are included in the ZIP, but Finder
-> hides names beginning with a dot. Press **Command-Shift-.** in Finder to show
-> them, or run `ls -la` in Terminal. Copy the extracted folder's complete
-> contents—not only the visible `deploy.sh` and `rename.md` files—into the
-> Phoenix repository.
+The installer adds `rename.md`, which contains a ready-to-use prompt for an AI
+coding assistant to customize the deployment for the target repository.
 
 ## Repository layout
 
@@ -45,63 +37,106 @@ application root on the server, and **must never be committed**.
 
 ## 1. Add the kit to a Phoenix repository
 
-The easiest method is to open Terminal, change into the Phoenix application,
-and run the installer directly from GitHub:
+Open Terminal and change into your Phoenix application. Copy and run this
+command first, replacing the example path with the path to your application:
 
 ```bash
 cd /path/to/my_app
+```
+
+Then copy and run this command separately:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/MICHAELMUNAVU83/phoenix-systemd-deploy/main/install.sh | bash
 ```
 
 The installer:
 
 1. checks that the current folder contains `mix.exs`;
-2. downloads and extracts all files, including hidden `.deploy` and `.github`
-   folders;
+2. installs all files, including hidden `.deploy` and `.github` folders;
 3. refuses to replace deployment files that already exist;
-4. makes the shell scripts executable; and
-5. adds `/.env.prod` to `.gitignore` so production secrets cannot be committed
+4. makes the shell scripts executable;
+5. detects whether the repository uses `main` or `master` and configures the
+   deployment workflow accordingly; and
+6. adds `/.env.prod` to `.gitignore` so production secrets cannot be committed
    accidentally.
 
 For security, you can inspect
 [`install.sh`](https://github.com/MICHAELMUNAVU83/phoenix-systemd-deploy/blob/main/install.sh)
 before running it.
 
-Alternatively, download and extract the ZIP into the Phoenix repository, or
-copy the files from this repository's `repo-template/` directory:
-
-```bash
-APP_REPO=/path/to/my_app
-
-cp -R repo-template/. "$APP_REPO/"
-chmod +x "$APP_REPO/deploy.sh" "$APP_REPO/.deploy/ci.sh"
-```
-
 Open `rename.md` in the target repository and give its prompt to your AI coding
 assistant. Review the resulting changes before committing them.
 
-Before creating any real `.env.prod` file, add its name to `.gitignore` in the
-application repository:
+### Generate Phoenix release support locally
+
+The deployment script builds releases, but it does **not** generate the release
+support files. In your Phoenix application on your local development machine,
+check whether these files already exist:
 
 ```bash
-cd "$APP_REPO"
-touch .gitignore
-grep -qxF '/.env.prod' .gitignore || printf '\n/.env.prod\n' >> .gitignore
+ls rel/overlays/bin/server rel/overlays/bin/migrate
+```
+
+If both files exist, skip this step. If they are missing, run:
+
+```bash
+mix phx.gen.release
+```
+
+Run this locally—not on the production server. Review the generated files and
+commit them with the application. You normally run this generator only once;
+future deployments reuse those committed files.
+
+A sandboxed coding assistant may ask permission because Mix needs a local
+filesystem lock or writes tools under your user account. That permission is for
+running the one-time generator locally; it is not part of a production deploy.
+Review the request before allowing it, as you would for any local command.
+
+Confirm the branch used by the deployment workflow:
+
+```bash
+grep "github.ref ==" .github/workflows/ci-deploy.yml
+```
+
+The result should contain your production branch, for example
+`refs/heads/main` or `refs/heads/master`. If the installer could not detect the
+branch, edit `.github/workflows/ci-deploy.yml` and replace `master` with the
+correct branch name before committing.
+
+The installer adds `/.env.prod` to `.gitignore` automatically. Confirm that it
+is present before creating any real production environment file:
+
+```bash
+grep -n '^/.env\.prod$' .gitignore
 ```
 
 This rule ignores only the real `.env.prod` file at the repository root. It
 does not ignore `.deploy/.env.prod.example`, which contains placeholders and
 should be committed so other operators know which variables are required.
 
-Commit the copied files and the `.gitignore` protection:
+Stage the installed deployment files and `.gitignore` protection:
 
 ```bash
-cd "$APP_REPO"
 git add deploy.sh .deploy .github/workflows/ci-deploy.yml rename.md .gitignore
+```
+
+If you ran `mix phx.gen.release`, use `git status --short` to see its generated
+files and stage them too. They normally include `rel/` and a release module
+under `lib/`:
+
+```bash
+git status --short
+git add rel lib/YOUR_APP/release.ex
+```
+
+Then commit everything:
+
+```bash
 git commit -m "Add repo-scoped systemd deployment"
 ```
 
-Repeat this copy step for each Phoenix application. Once copied, each
+Repeat this installation for each Phoenix application. Once installed, each
 application's files are independent and can be customized for that application.
 
 ## 2. Prepare the server checkout
@@ -110,24 +145,81 @@ The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
 application's database, and any asset-build tools used by the application.
 Deploy as a normal Linux user rather than root.
 
-Clone only the application repository; a separate deployment-kit checkout is
-not required:
+### Give the server access to a private GitHub repository
+
+Do this **before cloning** if the application repository is private. Skip this
+subsection if the repository is public or the server already has working
+GitHub credentials.
+
+Log in to the VPS as the deployment user and create a dedicated SSH key. When
+`ssh-keygen` asks for a passphrase, press Enter twice to leave it empty so
+automated deployments can fetch without prompting:
+
+```bash
+install -d -m 700 ~/.ssh
+ssh-keygen -t ed25519 -C "VPS application deploy key" -f ~/.ssh/github_app_deploy
+```
+
+This creates two files:
+
+- `~/.ssh/github_app_deploy` is the private key. It stays on the VPS and must
+  never be copied to GitHub or committed.
+- `~/.ssh/github_app_deploy.pub` is the public key. Display it with:
+
+```bash
+cat ~/.ssh/github_app_deploy.pub
+```
+
+Copy the complete output. In the **application repository** on GitHub, open
+**Settings → Deploy keys → Add deploy key**, paste the public key, and save it.
+Read access is sufficient; do not enable write access.
+
+Tell SSH to use that private key when the VPS connects to GitHub:
+
+```bash
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github_app_deploy
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+```
+
+Test the connection:
+
+```bash
+ssh -T git@github.com
+```
+
+The first connection may ask whether you trust GitHub's host key. Verify the
+displayed fingerprint against
+[GitHub's published SSH key fingerprints](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
+before entering `yes`. A successful test says that authentication succeeded
+and that GitHub does not provide shell access.
+
+### Clone the application
+
+Use the repository's **SSH** URL, which begins with `git@github.com:`. A
+separate deployment-kit checkout is not required:
 
 ```bash
 cd ~
-git clone YOUR_APPLICATION_REPOSITORY_URL
+git clone git@github.com:OWNER/REPOSITORY.git
 cd YOUR_APPLICATION_REPOSITORY_NAME
 ```
 
-The Phoenix application must provide release commands at:
+After cloning, confirm that the committed release support files are present:
 
 ```text
-_build/prod/rel/APP_NAME/bin/server
-_build/prod/rel/APP_NAME/bin/migrate
+rel/overlays/bin/server
+rel/overlays/bin/migrate
 ```
 
-If they are missing, run `mix phx.gen.release` in the application repository
-and commit its output.
+If they are missing, stop and run `mix phx.gen.release` locally as described in
+step 1, commit its output, and then pull the commit onto the server. Do not make
+uncommitted application changes directly on the production server.
 
 ## 3. Create the production environment
 
@@ -247,9 +339,12 @@ migrations, and restarts it, and `status` displays its systemd status. Use
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
-git pull --ff-only origin master
+git pull --ff-only origin YOUR_DEPLOY_BRANCH
 ./deploy.sh deploy
 ```
+
+Replace `YOUR_DEPLOY_BRANCH` with the branch selected during installation,
+usually `main` or `master`.
 
 The running service restarts only after the release builds and migrations
 succeed. Because `.deploy/` belongs to the application repository, deployment
@@ -286,8 +381,9 @@ errors, and the test suite.
 
 ## Configure GitHub Actions deployment
 
-The copied workflow runs CI for pushes and pull requests. Deployment runs only
-after CI succeeds on a push to `master`.
+The installed workflow runs CI for pushes and pull requests. Deployment runs
+only after CI succeeds on a push to the `main` or `master` branch selected by
+the installer.
 
 ### Create the GitHub Actions-to-VPS SSH key
 
@@ -336,52 +432,6 @@ After the GitHub secret has been saved and a deployment workflow has connected
 successfully, securely remove the local `github-actions-vps` private-key file.
 The public-key file may be retained. Never commit either file to the
 application repository.
-
-### Allow the VPS to fetch a private application repository
-
-This is a separate SSH connection and should use a separate key pair. Skip this
-step if the application repository is public or the server already has working
-GitHub credentials.
-
-On the VPS, logged in as the deployment user, generate a key with no
-passphrase:
-
-```bash
-install -d -m 700 ~/.ssh
-ssh-keygen -t ed25519 -C "VPS application deploy key" -f ~/.ssh/github_app_deploy
-```
-
-Display the public key:
-
-```bash
-cat ~/.ssh/github_app_deploy.pub
-```
-
-In the **application repository** on GitHub, add that public key under
-**Settings → Deploy keys → Add deploy key**. Read access is sufficient; do not
-enable write access. Keep `~/.ssh/github_app_deploy` private on the VPS.
-
-Configure SSH on the VPS to use this key for GitHub:
-
-```bash
-cat >> ~/.ssh/config <<'EOF'
-Host github.com
-  HostName github.com
-  User git
-  IdentityFile ~/.ssh/github_app_deploy
-  IdentitiesOnly yes
-EOF
-chmod 600 ~/.ssh/config
-ssh -T git@github.com
-```
-
-GitHub normally reports successful authentication while noting that it does
-not provide shell access. Ensure the application checkout uses an SSH remote:
-
-```bash
-git -C ~/YOUR_APPLICATION_REPOSITORY_NAME remote set-url origin git@github.com:OWNER/REPOSITORY.git
-git -C ~/YOUR_APPLICATION_REPOSITORY_NAME fetch origin
-```
 
 ### Record and verify the VPS host key
 

@@ -8,8 +8,10 @@ prompt:
 > configuration, `.tool-versions`, the default Git branch, and existing CI
 > files before editing. Update application-specific example values, the deploy
 > branch, health-check path, required production environment variables, database
-> examples, and documentation. Preserve secrets as placeholders and never read,
-> generate, commit, or print real credentials. Do not replace `@@APP_NAME@@`,
+> examples, and documentation. If `rel/overlays/bin/server` or
+> `rel/overlays/bin/migrate` is missing, run `mix phx.gen.release` locally and
+> retain its generated release files. Preserve secrets as placeholders and
+> never read, generate, commit, or print real credentials. Do not replace `@@APP_NAME@@`,
 > `@@APP_DIR@@`, or `@@ENV_FILE@@` in `phoenix.service.tpl`; `deploy.sh` fills
 > those values at deployment time. Keep `.env.prod` ignored and run relevant
 > syntax or validation checks after making changes. Summarize every value that
@@ -30,6 +32,7 @@ prompt:
 The AI should leave the repository with:
 
 - the correct deployment branch in the GitHub Actions workflow;
+- committed Phoenix release server and migration scripts;
 - a health endpoint that returns success without authentication;
 - every required runtime variable documented in `.env.prod.example`;
 - `.env.prod` listed in `.gitignore`;
