@@ -624,6 +624,40 @@ pager. Navigate with the arrow keys, **Page Up**, or **Page Down**, search with
 `/text`, and press `q` to exit. Use `./deploy.sh logs-follow` to stream new log
 entries and press **Ctrl-C** to stop following them.
 
+### What happens if the application is killed?
+
+Production releases started by `./deploy.sh deploy` or `./deploy.sh up` are
+supervised by systemd. The installed service uses:
+
+```ini
+Restart=on-failure
+RestartSec=5
+```
+
+If the BEAM process crashes, receives `SIGKILL`, or exits with a failure status,
+systemd normally starts it again after five seconds. An intentional
+`systemctl --user stop YOUR_APP_NAME.service` does not trigger a restart.
+`./deploy.sh local` runs in the foreground without systemd, so it also does not
+restart automatically if it is stopped or killed.
+
+Check the production service after a failure:
+
+```bash
+./deploy.sh status
+./deploy.sh logs
+```
+
+If repeated crashes cause systemd to rate-limit restart attempts, fix the
+underlying error and run:
+
+```bash
+systemctl --user reset-failed YOUR_APP_NAME.service
+./deploy.sh up
+```
+
+The service also starts after a VPS reboot only when it has been enabled and
+lingering is enabled for the deployment user, as described in step 5.
+
 Every successful deployment saves a numbered release snapshot. The newest
 snapshot is number 1. The value of `RELEASES_TO_KEEP` in `.env.prod` controls
 how many are retained; it defaults to 5. List them with:
