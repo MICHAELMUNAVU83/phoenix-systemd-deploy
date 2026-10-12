@@ -60,7 +60,10 @@ load_config() {
 
   SERVICE_NAME="${SERVICE_NAME:-${APP_NAME}.service}"
   PORT="${PORT:-4000}"
+  HEALTH_CHECK_ENABLED="${HEALTH_CHECK_ENABLED:-true}"
   RELEASES_TO_KEEP="${RELEASES_TO_KEEP:-5}"
+  [[ "$HEALTH_CHECK_ENABLED" == "true" || "$HEALTH_CHECK_ENABLED" == "false" ]] ||
+    fail "HEALTH_CHECK_ENABLED must be true or false"
   [[ "$RELEASES_TO_KEEP" =~ ^[1-9][0-9]*$ ]] || fail "RELEASES_TO_KEEP must be a positive whole number"
   RELEASE_ROOT="$APP_DIR/_build/prod/rel/$APP_NAME"
   RELEASE_BIN="$RELEASE_ROOT/bin"
@@ -130,17 +133,27 @@ restart_service() {
 }
 
 health_check() {
+  if [[ "$HEALTH_CHECK_ENABLED" == "false" ]]; then
+    info "Skipping the health check because HEALTH_CHECK_ENABLED=false"
+    return 0
+  fi
+
   local url="http://127.0.0.1:${PORT}${HEALTH_PATH}"
   info "Checking $url"
 
   for _ in {1..30}; do
-    if curl --silent --show-error --fail --max-time 3 "$url" >/dev/null; then
+    if curl --silent --fail --max-time 3 "$url" >/dev/null; then
       ok "Deployment is healthy"
       return 0
+    fi
+    if ! systemctl --user is-active --quiet "$SERVICE_NAME"; then
+      info "$SERVICE_NAME stopped before it could pass the health check"
+      break
     fi
     sleep 2
   done
 
+  systemctl --user status "$SERVICE_NAME" --no-pager || true
   journalctl --user -u "$SERVICE_NAME" -n 100 --no-pager || true
   return 1
 }

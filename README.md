@@ -494,6 +494,11 @@ FORCE_SSL="true"
 RELEASES_TO_KEEP="5"
 ```
 
+Keep the `ecto://` scheme for both PostgreSQL and MySQL. Ecto accepts a generic
+URL scheme and uses the repository adapter configured by the application to
+select PostgreSQL or MySQL. Do not change it to `mysql://` unless the
+application's own runtime configuration explicitly requires that format.
+
 Replace `DATABASE_NAME` with the exact database name you created and want this
 application to use—for example, `my_app_prod`. It is not automatically derived
 from `APP_NAME`.
@@ -577,7 +582,26 @@ curl --fail http://127.0.0.1:4000/
 ```
 
 Replace port `4000` and `/` if `.env.prod` or `HEALTH_PATH` uses different
-values. If deployment fails, inspect the service logs:
+values. The health check intentionally uses `127.0.0.1`: it tests the Phoenix
+service directly on the VPS without depending on public DNS, TLS, or firewall
+configuration. A connection failure means the service did not bind to the
+configured `PORT`; changing the check to the public IP or removing it would
+hide that startup problem.
+
+To deliberately allow deployments to finish without verifying that the
+application started, add this to `.env.prod` on the VPS:
+
+```bash
+HEALTH_CHECK_ENABLED="false"
+```
+
+This is not recommended for normal production use: GitHub Actions may report a
+successful deployment even when the service is unavailable. Set it back to
+`"true"` after diagnosing the startup problem.
+
+If deployment fails, the script stops waiting when the service is inactive and
+prints its status and recent journal entries. You can also inspect them
+directly:
 
 ```bash
 journalctl --user -u YOUR_APP_NAME.service -n 100 --no-pager
@@ -732,6 +756,7 @@ script changes arrive with the same pull as application changes.
 | `ENV_FILE`         | `APP_DIR/.env.prod`                              |
 | `SERVICE_TEMPLATE` | `.deploy/phoenix.service.tpl`                    |
 | `HEALTH_PATH`      | `/`                                              |
+| `HEALTH_CHECK_ENABLED` | `true`; set to `false` to skip verification  |
 | `PORT`             | `4000`, unless set in `.env.prod`                |
 | `RELEASES_TO_KEEP` | `5`; number of successful releases to retain     |
 | `RELEASES_DIR`     | User data directory outside the Git checkout     |
@@ -752,6 +777,26 @@ From the application root, run the exact checks used by GitHub Actions:
 
 The script runs `mix deps.get`, formatting checks, compilation with warnings as
 errors, and the test suite.
+
+### PostgreSQL and MySQL
+
+Production deployment is database-adapter agnostic: it passes `DATABASE_URL`
+to the Phoenix release and runs the application's release migration command.
+The application must already be configured with the appropriate Ecto adapter
+(`postgrex` for PostgreSQL or `myxql` for MySQL), and the production database
+and user must already exist.
+
+On GitHub Actions, `.deploy/ci.sh` inspects `mix.lock`. It starts MySQL 8.4 when
+it finds `myxql`; otherwise it starts PostgreSQL 16. To override detection, add
+the repository variable `CI_DATABASE_ENGINE` under **Settings → Secrets and
+variables → Actions → Variables** and set it to `mysql` or `postgres`.
+
+The default CI containers use the conventional generated Phoenix test
+credentials: PostgreSQL user/password `postgres`/`postgres`, or MySQL user
+`root` with an empty password. If the application's `config/test.exs` uses
+different credentials, customize the database startup in `.deploy/ci.sh` or
+the test configuration. Local CI continues to use the database already
+configured on the developer's computer; it does not start Docker.
 
 ### Customize CI checks
 
