@@ -754,30 +754,64 @@ On your computer, preferably outside the application directory, create a
 deployment key:
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions deployment" -f ./github-actions-vps
+ssh-keygen -t ed25519 -C "github-actions YOUR_APP_NAME" -f ./github-actions-YOUR_APP_NAME
 ```
 
-Press Enter when asked for a passphrase so the key has no passphrase. Install
-the public key on the VPS:
+Replace `YOUR_APP_NAME` with the repository or application name. For example,
+an application named `my-shop` would use `github-actions-my-shop`. Press Enter
+when asked for a passphrase so the key has no passphrase.
+
+Display the public key and copy its entire single line:
 
 ```bash
-ssh-copy-id -i ./github-actions-vps.pub -p 22 deploy@YOUR_VPS_HOST
+cat ./github-actions-YOUR_APP_NAME.pub
 ```
 
-Test the connection:
+Log in to the VPS as the deployment user:
 
 ```bash
-ssh -i ./github-actions-vps -p 22 deploy@YOUR_VPS_HOST
+ssh -p 22 deploy@YOUR_VPS_HOST
+```
+
+Once logged in, prepare the deployment user's SSH directory:
+
+```bash
+install -d -m 700 ~/.ssh
+```
+
+On the VPS, run this command, paste the copied public-key line, and then press
+Ctrl-D:
+
+```bash
+cat >> ~/.ssh/authorized_keys
+```
+
+Set the correct permission:
+
+```bash
+chmod 600 ~/.ssh/authorized_keys
+```
+
+Exit the VPS:
+
+```bash
+exit
+```
+
+Then test the deployment key from your computer:
+
+```bash
+ssh -i ./github-actions-YOUR_APP_NAME -p 22 deploy@YOUR_VPS_HOST
 ```
 
 Then open the GitHub repository and go to **Settings → Secrets and variables →
 Actions → New repository secret**. Create a secret named
 `VPS_SSH_PRIVATE_KEY` and paste the complete contents of the
-`github-actions-vps` file, including its `BEGIN` and `END` lines.
+`github-actions-YOUR_APP_NAME` file, including its `BEGIN` and `END` lines.
 
-Once deployment works, securely delete the local `github-actions-vps`
-private-key file. You may keep `github-actions-vps.pub`. Never commit either
-key file to Git.
+Once deployment works, securely delete the local
+`github-actions-YOUR_APP_NAME` private-key file. You may keep
+`github-actions-YOUR_APP_NAME.pub`. Never commit either key file to Git.
 
 If several projects deploy to the same VPS, use a separate key for each
 repository. This lets you remove one project's access without affecting the
