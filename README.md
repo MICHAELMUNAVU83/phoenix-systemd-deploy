@@ -38,8 +38,10 @@ my_app/
 └── ...
 ```
 
-`.deploy/` and the workflow are committed. The real `.env.prod` contains
-secrets, lives at the application root on the server, and is never committed.
+The `.deploy/` folder and GitHub Actions workflow **must be committed** because
+they contain reusable scripts and placeholder values. The real `.env.prod` is
+different: it contains production passwords and secrets, lives at the
+application root on the server, and **must never be committed**.
 
 ## 1. Add the kit to a Phoenix repository
 
@@ -56,11 +58,24 @@ chmod +x "$APP_REPO/deploy.sh" "$APP_REPO/.deploy/ci.sh"
 Open `rename.md` in the target repository and give its prompt to your AI coding
 assistant. Review the resulting changes before committing them.
 
-Commit the copied files in the application repository:
+Before creating any real `.env.prod` file, add its name to `.gitignore` in the
+application repository:
 
 ```bash
 cd "$APP_REPO"
-git add deploy.sh .deploy .github/workflows/ci-deploy.yml rename.md
+touch .gitignore
+grep -qxF '/.env.prod' .gitignore || printf '\n/.env.prod\n' >> .gitignore
+```
+
+This rule ignores only the real `.env.prod` file at the repository root. It
+does not ignore `.deploy/.env.prod.example`, which contains placeholders and
+should be committed so other operators know which variables are required.
+
+Commit the copied files and the `.gitignore` protection:
+
+```bash
+cd "$APP_REPO"
+git add deploy.sh .deploy .github/workflows/ci-deploy.yml rename.md .gitignore
 git commit -m "Add repo-scoped systemd deployment"
 ```
 
@@ -94,7 +109,14 @@ and commit its output.
 
 ## 3. Create the production environment
 
-On the server, copy the example to the application root and protect it:
+First, confirm that the `.gitignore` committed in step 1 contains this line:
+
+```gitignore
+/.env.prod
+```
+
+Then, on the server, copy the safe example to the application root and protect
+the new file so only the deployment user can read it:
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
@@ -102,8 +124,16 @@ cp .deploy/.env.prod.example .env.prod
 chmod 600 .env.prod
 ```
 
-Add `.env.prod` to the application's `.gitignore`. It contains secrets and must
-never be committed.
+Immediately verify that Git ignores the real file:
+
+```bash
+git check-ignore -v .env.prod
+git status --short
+```
+
+The first command should print the matching `.gitignore` rule. The second
+command must not list `.env.prod`. Stop and fix `.gitignore` before adding any
+secret if either check fails. Never run `git add -f .env.prod`.
 
 Generate `SECRET_KEY_BASE` once and keep it stable between deployments:
 
