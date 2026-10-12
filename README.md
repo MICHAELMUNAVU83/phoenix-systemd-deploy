@@ -54,7 +54,8 @@ The installer:
 
 1. checks that the current folder contains `mix.exs`;
 2. installs all files, including hidden `.deploy` and `.github` folders;
-3. when rerun, updates only `deploy.sh` and `.deploy/ci.sh`;
+3. when rerun, updates `deploy.sh` and `.deploy/ci.sh` and adds the manual
+   workflow trigger to a recognized older workflow when needed;
 4. makes the shell scripts executable;
 5. detects whether the repository uses `main` or `master` and configures the
    deployment workflow accordingly; and
@@ -69,13 +70,16 @@ deploy.sh
 .deploy/ci.sh
 ```
 
-The updater preserves `.deploy/.env.prod.example`,
+The updater otherwise preserves `.deploy/.env.prod.example`,
 `.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, `rename.md`,
 and all application files because those may have app-specific customizations.
-Review every script update before committing it:
+If the existing workflow still has the standard push-only deployment
+condition, the updater adds `workflow_dispatch` while preserving its `main` or
+`master` deployment branch. It warns instead of changing a workflow it cannot
+safely recognize. Review every update before committing it:
 
 ```bash
-git diff -- deploy.sh .deploy/ci.sh
+git diff -- deploy.sh .deploy/ci.sh .github/workflows/ci-deploy.yml
 ./.deploy/ci.sh
 ```
 

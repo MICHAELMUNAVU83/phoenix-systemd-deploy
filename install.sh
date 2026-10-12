@@ -52,6 +52,34 @@ if [[ "$INSTALL_MODE" == "update" ]]; then
   mkdir -p "$TARGET_DIR/.deploy"
   cp "$TEMP_DIR/kit/deploy.sh" "$TARGET_DIR/deploy.sh"
   cp "$TEMP_DIR/kit/.deploy/ci.sh" "$TARGET_DIR/.deploy/ci.sh"
+
+  WORKFLOW_FILE="$TARGET_DIR/.github/workflows/ci-deploy.yml"
+  if [[ -f "$WORKFLOW_FILE" ]] && ! grep -qE '^[[:space:]]*workflow_dispatch:' "$WORKFLOW_FILE"; then
+    if grep -qE '^  pull_request:[[:space:]]*$' "$WORKFLOW_FILE" && \
+      { grep -qF "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'" "$WORKFLOW_FILE" || \
+        grep -qF "    if: github.event_name == 'push' && github.ref == 'refs/heads/master'" "$WORKFLOW_FILE"; }; then
+      awk '
+        /^  pull_request:[[:space:]]*$/ {
+          print
+          print "  workflow_dispatch:"
+          next
+        }
+        $0 == "    if: github.event_name == '\''push'\'' && github.ref == '\''refs/heads/main'\''" ||
+        $0 == "    if: github.event_name == '\''push'\'' && github.ref == '\''refs/heads/master'\''" {
+          condition = substr($0, 9)
+          print "    if: >-"
+          print "      (" condition ") ||"
+          print "      github.event_name == '\''workflow_dispatch'\''"
+          next
+        }
+        { print }
+      ' "$WORKFLOW_FILE" > "$WORKFLOW_FILE.bak"
+      mv "$WORKFLOW_FILE.bak" "$WORKFLOW_FILE"
+      printf 'Added manual Run workflow support to .github/workflows/ci-deploy.yml.\n'
+    else
+      printf '\033[1;33mWarning:\033[0m The existing CI workflow is customized; add workflow_dispatch manually.\n'
+    fi
+  fi
   printf 'Updated deploy.sh and .deploy/ci.sh; preserved customized deployment files.\n'
 else
   cp -R "$TEMP_DIR/kit/." "$TARGET_DIR/"
@@ -109,5 +137,5 @@ fi
 if [[ "$INSTALL_MODE" == "fresh" ]]; then
   printf 'Next: open %s/rename.md and follow its instructions.\n' "$TARGET_DIR"
 else
-  printf 'Review the updated scripts with: git diff -- deploy.sh .deploy/ci.sh\n'
+  printf 'Review the updates with: git diff -- deploy.sh .deploy/ci.sh .github/workflows/ci-deploy.yml\n'
 fi
