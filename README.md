@@ -139,6 +139,38 @@ git commit -m "Add repo-scoped systemd deployment"
 Repeat this installation for each Phoenix application. Once installed, each
 application's files are independent and can be customized for that application.
 
+## Test the release workflow locally
+
+You can test the release workflow on your development machine before using a
+VPS. Local mode uses `MIX_ENV=dev`, including the database settings already in
+`config/dev.exs`. It does not read `.env.prod`, use the production database, or
+install the Linux `systemd` service.
+
+Make sure the development database configured by `config/dev.exs` exists:
+
+```bash
+mix ecto.create
+```
+
+Then build a development release, run its release migration command against
+the development database, and start it in the foreground:
+
+```bash
+./deploy.sh local
+```
+
+In another terminal, test it:
+
+```bash
+curl --fail http://localhost:4000/
+```
+
+Press **Ctrl-C** in the first terminal to stop the release. This verifies asset
+building, release creation, the generated migration script, and release
+startup. It does not test `config/runtime.exs` production settings, production
+secrets, a Linux build, or `systemd`; the first manual VPS deployment remains
+the final production check.
+
 ## 2. Prepare the server checkout
 
 The server needs Linux with systemd, Erlang, Elixir, Git, curl, the
@@ -269,6 +301,10 @@ POOL_SIZE="10"
 FORCE_SSL="true"
 ```
 
+Replace `DATABASE_NAME` with the exact database name you created and want this
+application to use—for example, `my_app_prod`. It is not automatically derived
+from `APP_NAME`.
+
 Use `FORCE_SSL="false"` only while testing direct HTTP without an HTTPS reverse
 proxy. Add every other runtime dependency to this file as well, for example:
 
@@ -289,18 +325,59 @@ The deployment script runs the release migration command (equivalent to
 the application's tables, but they do not create the database, create database
 users, or grant permissions.
 
-## 5. Perform the first deployment
+## 5. Test the deployment manually on the production server
 
-Run the repo-local script from the application root as the deployment user:
+Do this before configuring GitHub Actions. It proves that the server, database,
+environment file, release, systemd service, and health check work together.
+GitHub Actions will eventually run this same deployment command.
+
+`./deploy.sh deploy` is not a dry run: it builds the release, runs migrations
+against the database in `.env.prod`, and restarts the service. To rehearse
+without touching production data, use a separate Linux staging server, staging
+database, and staging `.env.prod` file.
+
+Do not run `./deploy.sh deploy` on macOS: use `./deploy.sh local` there instead.
+The full `deploy` command installs a Linux `systemd` service. SSH into the VPS
+as the deployment user, then change into the application:
 
 ```bash
 cd ~/YOUR_APPLICATION_REPOSITORY_NAME
+```
+
+Confirm the secret environment file exists and is ignored by Git:
+
+```bash
+test -f .env.prod && echo ".env.prod exists"
+git check-ignore -v .env.prod
+```
+
+Now run the complete production deployment manually:
+
+```bash
 ./deploy.sh deploy
 ```
 
 The app name is detected from `mix.exs`. For an app named `my_app`, the script
 creates `~/.config/systemd/user/my_app.service`, builds and migrates the release,
-then enables and starts the service.
+enables and starts the service, and performs an HTTP health check. A successful
+run ends with `Deployment is healthy`.
+
+Verify the running service:
+
+```bash
+./deploy.sh status
+curl --fail http://127.0.0.1:4000/
+```
+
+Replace port `4000` and `/` if `.env.prod` or `HEALTH_PATH` uses different
+values. If deployment fails, inspect the service logs:
+
+```bash
+journalctl --user -u YOUR_APP_NAME.service -n 100 --no-pager
+```
+
+Fix the reported problem and run `./deploy.sh deploy` again. The command is
+intended to be safely rerun after configuration or application changes.
 
 Enable lingering once so the user service starts after a reboot without an
 active SSH session:
@@ -334,6 +411,10 @@ Or use the simpler repo-local commands from the application root:
 `up` starts or restarts the existing release, `deploy` builds the release, runs
 migrations, and restarts it, and `status` displays its systemd status. Use
 `journalctl --user -u my_app.service -f` when you need live logs.
+
+On your local development machine, run `./.deploy/ci.sh` for formatting,
+compilation, and tests. Use `./deploy.sh local` when you also want to smoke-test
+the production release without attempting to install a Linux service.
 
 ## 7. Deploy updates
 

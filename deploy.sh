@@ -4,7 +4,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${APP_DIR:-$(pwd)}"
-ENV_FILE="${ENV_FILE:-${APP_DIR}/.env.prod}"
+COMMAND="${1:-deploy}"
+if [[ "$COMMAND" == "local" ]]; then
+  ENV_FILE="${ENV_FILE:-}"
+else
+  ENV_FILE="${ENV_FILE:-${APP_DIR}/.env.prod}"
+fi
 SERVICE_TEMPLATE="${SERVICE_TEMPLATE:-${SCRIPT_DIR}/.deploy/phoenix.service.tpl}"
 HEALTH_PATH="${HEALTH_PATH:-/}"
 
@@ -16,7 +21,7 @@ load_config() {
   APP_DIR="$(cd "$APP_DIR" && pwd)"
   [[ -f "$APP_DIR/mix.exs" ]] || fail "APP_DIR is not a Phoenix project: $APP_DIR"
 
-  if [[ -f "$ENV_FILE" ]]; then
+  if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
     set -a
     # shellcheck disable=SC1090
     source "$ENV_FILE"
@@ -117,14 +122,39 @@ deploy() {
   health_check
 }
 
+run_local() {
+  local local_release_bin="$APP_DIR/_build/dev/rel/$APP_NAME/bin"
+
+  info "Building $APP_NAME development release using config/dev.exs"
+  (
+    cd "$APP_DIR"
+    export MIX_ENV=dev
+    mix deps.get
+    mix compile
+    mix assets.deploy
+    mix release --overwrite
+  )
+  [[ -x "$local_release_bin/server" ]] || fail "Development release did not create $local_release_bin/server"
+  [[ -x "$local_release_bin/migrate" ]] || fail "Development release migration command is missing"
+
+  info "Running migrations with the config/dev.exs database settings"
+  "$local_release_bin/migrate"
+  info "Starting $APP_NAME development release locally on port $PORT"
+  info "Press Ctrl-C to stop it"
+  exec "$local_release_bin/server"
+}
+
 usage() {
   cat <<'EOF'
-Usage: ./deploy.sh [up|deploy|status]
+Usage: ./deploy.sh [local|up|deploy|status]
 
 The default command is deploy. Set APP_DIR when the Phoenix application is not
 the current directory, for example:
 
   APP_DIR=/srv/my_app ./deploy.sh deploy
+
+Use local to build, migrate, and run a development release with config/dev.exs
+in the foreground, without installing a systemd service.
 EOF
 }
 
@@ -135,8 +165,9 @@ fi
 
 load_config
 
-case "${1:-deploy}" in
+case "$COMMAND" in
   deploy) deploy ;;
+  local) run_local ;;
   up)
     require_production_env
     install_service
