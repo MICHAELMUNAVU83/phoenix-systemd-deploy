@@ -65,12 +65,6 @@ restart, or otherwise change the application:
 ./deploy.sh commands
 ```
 
-> [!TIP]
-> The installer adds `rename.md`, which contains a ready-to-use prompt for an AI
-> coding assistant to customize the deployment for the target repository. Open
-> it, give its prompt to your assistant, and review the resulting changes
-> before committing them.
-
 ## Contents
 
 **Setup guide**
@@ -105,7 +99,6 @@ After installation, each Phoenix repository should contain:
 
 ```text
 my_app/
-├── rename.md
 ├── deploy.sh
 ├── .deploy/
 │   ├── .env.prod.example
@@ -120,7 +113,7 @@ my_app/
 | Path | Commit it? | Why |
 | --- | :---: | --- |
 | `.deploy/` and `.github/workflows/` | ✅ **Must** | Reusable scripts and placeholder values |
-| `deploy.sh`, `rename.md` | ✅ Yes | The deployment entry point and customization prompt |
+| `deploy.sh` | ✅ Yes | The deployment entry point |
 | `.env.prod` | ❌ **Never** | Production passwords and secrets; lives at the application root on the server |
 
 ---
@@ -170,9 +163,6 @@ After installation, start by viewing every available deployment command:
 This only displays help; it does not build, migrate, restart, or otherwise
 change the application.
 
-Open `rename.md` in the target repository and give its prompt to your AI coding
-assistant. Review the resulting changes before committing them.
-
 <details>
 <summary><b>Updating an existing installation</b></summary>
 
@@ -187,8 +177,8 @@ deploy.sh
 ```
 
 The updater otherwise preserves `.deploy/.env.prod.example`,
-`.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, `rename.md`,
-and all application files because those may have app-specific customizations.
+`.deploy/phoenix.service.tpl`, `.github/workflows/ci-deploy.yml`, and all
+application files because those may have app-specific customizations.
 
 If the existing workflow still has the standard push-only deployment
 condition, the updater adds `workflow_dispatch` while preserving its `main` or
@@ -292,7 +282,7 @@ should be committed so other operators know which variables are required.
 Stage the installed deployment files and `.gitignore` protection:
 
 ```bash
-git add deploy.sh .deploy .github/workflows/ci-deploy.yml rename.md .gitignore
+git add deploy.sh .deploy .github/workflows/ci-deploy.yml .gitignore
 ```
 
 If you ran `mix phx.gen.release`, use `git status --short` to see its generated

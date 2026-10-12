@@ -1,13 +1,12 @@
 # The deployment folders are hidden by default
 
-This download contains five items:
+This download contains four items:
 
 ```text
 .deploy/
 .github/
 README-FIRST.md
 deploy.sh
-rename.md
 ```
 
 The `.deploy` and `.github` folders begin with a dot, so macOS Finder hides them
@@ -25,5 +24,5 @@ Terminal, this command includes the hidden folders:
 cp -R /path/to/extracted-folder/. /path/to/your-phoenix-app/
 ```
 
-Then open `rename.md` and follow its customization instructions. You may delete
-this `README-FIRST.md` file after installation.
+Then run `./deploy.sh commands` and follow the setup guide in the project
+README. You may delete this `README-FIRST.md` file after installation.

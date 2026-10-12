@@ -25,7 +25,6 @@ fi
 
 if [[ "$INSTALL_MODE" == "fresh" ]]; then
   for path in \
-    rename.md \
     README-FIRST.md \
     .deploy/.env.prod.example \
     .deploy/phoenix.service.tpl \
@@ -135,7 +134,7 @@ if [[ ! -f "$TARGET_DIR/rel/overlays/bin/server" || ! -f "$TARGET_DIR/rel/overla
   printf '\033[1;33mRelease setup needed:\033[0m run mix phx.gen.release locally, then commit its generated files.\n'
 fi
 if [[ "$INSTALL_MODE" == "fresh" ]]; then
-  printf 'Next: open %s/rename.md and follow its instructions.\n' "$TARGET_DIR"
+  printf 'Next: run %s/deploy.sh commands and follow the setup guide.\n' "$TARGET_DIR"
 else
   printf 'Review the updates with: git diff -- deploy.sh .deploy/ci.sh .github/workflows/ci-deploy.yml\n'
 fi
