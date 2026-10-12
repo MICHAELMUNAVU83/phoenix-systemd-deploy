@@ -14,6 +14,12 @@ HTTP. The same CI script is used locally and in GitHub Actions.
 The download includes `rename.md`, which contains a ready-to-use prompt for an
 AI coding assistant to customize the deployment for the target repository.
 
+> **macOS users:** `.deploy` and `.github` are included in the ZIP, but Finder
+> hides names beginning with a dot. Press **Command-Shift-.** in Finder to show
+> them, or run `ls -la` in Terminal. Copy the extracted folder's complete
+> contents—not only the visible `deploy.sh` and `rename.md` files—into the
+> Phoenix repository.
+
 ## Repository layout
 
 After installation, each Phoenix repository should contain:
