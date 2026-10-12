@@ -126,14 +126,18 @@ run_local() {
   local local_release_bin="$APP_DIR/_build/dev/rel/$APP_NAME/bin"
 
   info "Building $APP_NAME development release using config/dev.exs"
-  (
+  if ! (
     cd "$APP_DIR"
     export MIX_ENV=dev
     mix deps.get
     mix compile
     mix assets.deploy
     mix release --overwrite
-  )
+  ); then
+    (cd "$APP_DIR" && MIX_ENV=dev mix phx.digest.clean --all) || true
+    fail "Development release build failed"
+  fi
+  (cd "$APP_DIR" && MIX_ENV=dev mix phx.digest.clean --all) || true
   [[ -x "$local_release_bin/server" ]] || fail "Development release did not create $local_release_bin/server"
   [[ -x "$local_release_bin/migrate" ]] || fail "Development release migration command is missing"
 

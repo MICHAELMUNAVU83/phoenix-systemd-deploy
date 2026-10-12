@@ -191,25 +191,45 @@ Apply the same change to any other configured regex named in the error, then
 run `./deploy.sh local` again. The `E` modifier makes the compiled regex safe
 for Mix to export into a release configuration.
 
-To update the `priv/static` regex automatically from the application root, run:
+To update all single-line regexes at every level under `config/`, run this from
+the application root:
 
 ```bash
-perl -pi.bak -e 'if (/priv.*static/ && /~r/ && !m{[/"]E\s*,?\s*$}) { s{([/"])(\s*,?\s*)$}{$1E$2} }' config/dev.exs
+find config -type f \( -name '*.ex' -o -name '*.exs' \) -exec perl -pi.bak -e 'if (/~r"/ && !/"[A-Za-z]*E[A-Za-z]*\s*,?\s*$/) { s/"([A-Za-z]*)(\s*,?\s*)$/"$1E$2/ } elsif (/~r\// && !m{/([A-Za-z]*E[A-Za-z]*)\s*,?\s*$}) { s{/([A-Za-z]*)(\s*,?\s*)$}{/$1E$2} }' {} +
 ```
 
-The command creates `config/dev.exs.bak` and does not add a second `E` if it is
-already present. Review the change:
+The command creates a `.bak` copy beside each checked config file, updates both
+`~r"..."` and `~r/.../` forms, preserves existing modifiers, and does not add a
+second `E`. Review all changes:
 
 ```bash
-git diff -- config/dev.exs
+git diff -- config
 ```
 
 If the diff is correct, remove the backup and retry the local release:
 
 ```bash
-rm config/dev.exs.bak
+find config -type f -name '*.bak' -delete
 ./deploy.sh local
 ```
+
+If an earlier local build left fingerprinted files and `.gz` copies under
+`priv/static`, remove only Phoenix's generated digest output with:
+
+```bash
+MIX_ENV=dev mix phx.digest.clean --all
+```
+
+Keep and commit your original images, `robots.txt`, and other source assets.
+Commit `.deploy/`, `.github/workflows/`, `deploy.sh`, the generated `rel/`
+scripts, and `lib/YOUR_APP/release.ex`. Delete `README-FIRST.md` after setup.
+Files ending in `.bak`, `.DS_Store`, `.env.prod`, and
+`priv/static/cache_manifest.json` should not be committed; the installer adds
+ignore rules for them.
+
+If the application stores user-generated files under `priv/static/uploads/`,
+add `/priv/static/uploads/` to `.gitignore` too. Do not add that rule if the
+folder contains deliberate source assets that should ship with the application.
 
 ## 2. Prepare the server checkout
 

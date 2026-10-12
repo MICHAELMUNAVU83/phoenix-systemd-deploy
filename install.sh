@@ -68,6 +68,11 @@ touch "$TARGET_DIR/.gitignore"
 if ! grep -qxF '/.env.prod' "$TARGET_DIR/.gitignore"; then
   printf '\n# Production secrets (never commit this file)\n/.env.prod\n' >> "$TARGET_DIR/.gitignore"
 fi
+for ignore_rule in '.DS_Store' '*.bak' '/priv/static/cache_manifest.json'; do
+  if ! grep -qxF "$ignore_rule" "$TARGET_DIR/.gitignore"; then
+    printf '%s\n' "$ignore_rule" >> "$TARGET_DIR/.gitignore"
+  fi
+done
 
 printf '\033[1;32mInstallation complete.\033[0m\n'
 if [[ ! -f "$TARGET_DIR/rel/overlays/bin/server" || ! -f "$TARGET_DIR/rel/overlays/bin/migrate" ]]; then
