@@ -38,7 +38,11 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 printf 'Downloading Phoenix systemd deployment kit...\n'
-curl --fail --silent --show-error --location "$DOWNLOAD_URL" \
+CACHE_BUSTED_URL="$DOWNLOAD_URL"
+if [[ "$DOWNLOAD_URL" == https://github.com/* || "$DOWNLOAD_URL" == https://raw.githubusercontent.com/* ]]; then
+  CACHE_BUSTED_URL="${DOWNLOAD_URL}?cache_bust=$(date +%s)"
+fi
+curl --fail --silent --show-error --location "$CACHE_BUSTED_URL" \
   --output "$TEMP_DIR/phoenix-systemd-deploy.zip"
 
 mkdir -p "$TEMP_DIR/kit"
@@ -53,6 +57,7 @@ else
   cp -R "$TEMP_DIR/kit/." "$TARGET_DIR/"
 fi
 chmod +x "$TARGET_DIR/deploy.sh" "$TARGET_DIR/.deploy/ci.sh"
+grep -qF './deploy.sh commands' "$TARGET_DIR/deploy.sh" || fail "Downloaded deploy.sh failed the version check"
 
 DEPLOY_BRANCH=""
 if git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -93,6 +98,8 @@ done
 
 if [[ "$INSTALL_MODE" == "update" ]]; then
   printf '\033[1;32mScript update complete.\033[0m\n'
+  printf 'Available commands:\n'
+  "$TARGET_DIR/deploy.sh" commands
 else
   printf '\033[1;32mInstallation complete.\033[0m\n'
 fi

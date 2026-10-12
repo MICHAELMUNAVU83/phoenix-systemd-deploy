@@ -47,7 +47,7 @@ cd /path/to/my_app
 Then copy and run this command separately:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MICHAELMUNAVU83/phoenix-systemd-deploy/main/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/MICHAELMUNAVU83/phoenix-systemd-deploy/main/install.sh?$(date +%s)" | bash
 ```
 
 The installer:
